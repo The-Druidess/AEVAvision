@@ -57,6 +57,7 @@ class ChannelConfig:
     custom_media_rating_keys: list = field(default_factory=list)
     display_number: Optional[int] = None
     excluded_rating_keys: list = field(default_factory=list)
+    playlist_id: Optional[str] = None  # Plex playlist ratingKey this channel mirrors
 
 
 def _ch(number, name, **kwargs) -> ChannelConfig:

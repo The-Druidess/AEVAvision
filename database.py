@@ -8,7 +8,7 @@ from contextlib import contextmanager
 
 log = logging.getLogger(__name__)
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "data", "nostalgiavision.db")
+DB_PATH = os.path.join(os.path.dirname(__file__), "data", "aevavision.db")
 
 
 def _get_conn() -> sqlite3.Connection:

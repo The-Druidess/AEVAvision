@@ -1,14 +1,14 @@
-# NostalgiaVision
+# ÆVAvision
 
-A self-hosted, retro TV experience powered by your Plex media server. NostalgiaVision turns your personal media library into a live TV broadcast — complete with a scrollable program guide, channel surfing, live preview, and automatic scheduling.
+A self-hosted, retro TV experience powered by your Plex media server. ÆVAvision turns your personal media library into a live TV broadcast — complete with a scrollable program guide, channel surfing, live preview, and automatic scheduling.
 
 Built with Python, runs on Windows and Linux, and opens in any modern web browser — no app install required.
 
-![NostalgiaVision interface](image/screen.png)
+![ÆVAvision interface](image/screen.png)
 
 ## What it does
 
-NostalgiaVision generates a rolling multi-day TV schedule from your Plex library and presents it as a classic electronic program guide (EPG). Content plays back through your browser as a live stream, advancing automatically from one program to the next — no clicking required.
+ÆVAvision generates a rolling multi-day TV schedule from your Plex library and presents it as a classic electronic program guide (EPG). Content plays back through your browser as a live stream, advancing automatically from one program to the next — no clicking required.
 
 - Browse the guide grid, click a program, and watch it from the live position
 - Leave it running and it behaves like a real TV channel — programs roll over automatically
@@ -38,7 +38,7 @@ Then open **http://localhost:5000** — the browser opens automatically.
 
 ## Reverse proxy under a subpath
 
-Nostalgiavision can be served at a URL such as `https://example.com/ntv/`.
+ÆVAvision can be served at a URL such as `https://example.com/ntv/`.
 Keep the trailing slash in the public URL and have the proxy strip `/ntv/`
 before forwarding requests to Flask. For nginx:
 
@@ -103,7 +103,7 @@ to Flask as `/api/guide`.
 ## Project structure
 
 ```
-nostalgiavision/
+aevavision/
 ├── app.py           # Flask web server + REST API
 ├── channels.py      # 72 predefined channel configs
 ├── scheduler.py     # Schedule generation (4 algorithms)

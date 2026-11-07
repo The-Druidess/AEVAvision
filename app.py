@@ -1,4 +1,4 @@
-"""Nostalgiavision — Flask web server.
+"""ÆVAvision — Flask web server.
 
 Endpoints:
   GET    /                          → EPG guide page
@@ -521,6 +521,137 @@ def api_delete_channel(number: int):
     return jsonify({"ok": True})
 
 
+# ── Playlist → channel mirroring ──────────────────────────────────────────────
+
+_PLAYLIST_SYNC_INTERVAL = 3600          # seconds between automatic playlist checks
+_playlist_sync_lock = threading.Lock()
+_playlist_sync_status = {"last_run": 0, "last_result": None}
+
+
+def sync_playlist_channels() -> dict:
+    """Mirror Plex video playlists as custom channels.
+
+    - A new playlist creates a new custom channel (next free number from 101).
+    - A playlist whose items changed updates its channel and rebuilds its schedule.
+    - A deleted playlist removes its channel and scheduled programs.
+    - Channels running low on scheduled programs (<24h left) are topped up.
+    """
+    client = _get_client()
+    if not client:
+        return {"ok": False, "error": "Not connected to Plex"}
+
+    with _playlist_sync_lock:
+        try:
+            playlists = [p for p in client.get_playlists()
+                         if p.get("playlistType") == "video"]
+        except Exception as exc:
+            log.warning("Playlist sync: could not fetch playlists: %s", exc)
+            return {"ok": False, "error": str(exc)}
+
+        # Index existing custom channels by playlist id (and by name, to adopt
+        # playlist channels created before playlist_id tracking existed).
+        by_playlist, by_name = {}, {}
+        max_num = 100
+        for row in db.get_custom_channels():
+            try:
+                cfg = ChannelConfig(**json.loads(row["config_json"]))
+            except Exception:
+                continue
+            max_num = max(max_num, cfg.number)
+            if cfg.playlist_id:
+                by_playlist[cfg.playlist_id] = cfg
+            else:
+                by_name[cfg.name] = cfg
+
+        now_ms = int(time.time() * 1000)
+        created, updated, removed, rebuild = [], [], [], []
+        seen_ids = set()
+
+        for pl in playlists:
+            pl_id = str(pl.get("ratingKey") or "")
+            title = pl.get("title") or f"Playlist {pl_id}"
+            if not pl_id:
+                continue
+            seen_ids.add(pl_id)
+            try:
+                items = client.get_playlist_items(pl_id)
+            except Exception as exc:
+                log.warning("Playlist sync: items fetch failed for %s: %s", title, exc)
+                continue
+            keys = [str(it.get("ratingKey")) for it in items if it.get("ratingKey")]
+
+            cfg = by_playlist.get(pl_id)
+            if cfg is None and title in by_name:
+                cfg = by_name.pop(title)          # adopt legacy playlist channel
+                cfg.playlist_id = pl_id
+                by_playlist[pl_id] = cfg
+                db.save_custom_channel(cfg.number, json.dumps(asdict(cfg)))
+
+            if cfg is None:
+                max_num += 1
+                cfg = ChannelConfig(number=max_num, name=title, type="mixed",
+                                    is_custom=True, playlist_id=pl_id,
+                                    custom_media_rating_keys=keys)
+                db.save_custom_channel(cfg.number, json.dumps(asdict(cfg)))
+                created.append(title)
+                rebuild.append(cfg)
+            elif set(cfg.custom_media_rating_keys) != set(keys) or cfg.name != title:
+                cfg.name = title
+                cfg.custom_media_rating_keys = keys
+                db.save_custom_channel(cfg.number, json.dumps(asdict(cfg)))
+                updated.append(title)
+                rebuild.append(cfg)
+            else:
+                # Unchanged — top up if less than 24h of schedule remains
+                latest = db.get_latest_program_end(str(cfg.number))
+                if not latest or latest < now_ms + 24 * 3_600_000:
+                    rebuild.append(cfg)
+
+        # Channels whose playlist no longer exists
+        for pl_id, cfg in list(by_playlist.items()):
+            if pl_id not in seen_ids:
+                db.delete_custom_channel(cfg.number)
+                db.delete_channel_programs_from(str(cfg.number), 0)
+                removed.append(cfg.name)
+
+        if rebuild and not _schedule_status["running"]:
+            days = int(_load_config().get("schedule_days_ahead", 3))
+            try:
+                build_schedules(rebuild, days=days)
+            except Exception:
+                log.exception("Playlist sync: schedule rebuild failed")
+
+        result = {"ok": True, "created": created, "updated": updated,
+                  "removed": removed,
+                  "rebuilt": [c.name for c in rebuild]}
+        _playlist_sync_status["last_run"] = int(time.time())
+        _playlist_sync_status["last_result"] = result
+        if created or updated or removed:
+            log.info("Playlist sync: created=%s updated=%s removed=%s",
+                     created, updated, removed)
+        return result
+
+
+def _playlist_sync_loop():
+    time.sleep(30)                       # let the server settle after startup
+    while True:
+        try:
+            sync_playlist_channels()
+        except Exception:
+            log.exception("Playlist sync loop error")
+        time.sleep(_PLAYLIST_SYNC_INTERVAL)
+
+
+threading.Thread(target=_playlist_sync_loop, daemon=True).start()
+
+
+@app.route("/api/playlists/sync", methods=["POST"])
+def api_playlist_sync():
+    """Run the playlist → channel sync immediately."""
+    result = sync_playlist_channels()
+    return jsonify(result), (200 if result.get("ok") else 502)
+
+
 @app.route("/api/channels/<int:number>/restore", methods=["POST"])
 def api_restore_channel(number: int):
     """Restore a hidden predefined channel to its default config."""
@@ -789,11 +920,11 @@ def watch(rating_key: str):
         return "Not connected to Plex", 503
 
     session_id = uuid.uuid4().hex[:16]
-    client_id = f"nostalgiavision-{session_id}"
+    client_id = f"aevavision-{session_id}"
 
     hls_params = urlencode({
         "X-Plex-Token": token,
-        "X-Plex-Product": "Nostalgiavision",
+        "X-Plex-Product": "AEVAvision",
         "X-Plex-Version": "0.3.17",
         "X-Plex-Platform": "Chrome",
         "X-Plex-Client-Identifier": client_id,
@@ -811,7 +942,7 @@ def watch(rating_key: str):
 
     # Fetch metadata for the title display
     client = _get_client()
-    title = "Nostalgiavision"
+    title = "ÆVAvision"
     thumb_path = None
     try:
         item = client.get_item_metadata(rating_key) if client else None
@@ -849,11 +980,11 @@ def api_hls_url(rating_key: str):
         return jsonify({"error": "Not connected to Plex"}), 503
 
     session_id = uuid.uuid4().hex[:16]
-    client_id = f"nostalgiavision-{session_id}"
+    client_id = f"aevavision-{session_id}"
 
     hls_params = urlencode({
         "X-Plex-Token": token,
-        "X-Plex-Product": "Nostalgiavision",
+        "X-Plex-Product": "AEVAvision",
         "X-Plex-Version": "0.3.17",
         "X-Plex-Platform": "Chrome",
         "X-Plex-Client-Identifier": client_id,
@@ -1021,5 +1152,5 @@ if __name__ == "__main__":
     cfg = _load_config()
     host = cfg.get("host", "0.0.0.0")
     port = int(cfg.get("port", 5000))
-    log.info("Nostalgiavision starting on http://%s:%d", host, port)
+    log.info("ÆVAvision starting on http://%s:%d", host, port)
     app.run(host=host, port=port, debug=False, threaded=True)

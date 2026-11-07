@@ -9,10 +9,10 @@ import logging
 log = logging.getLogger(__name__)
 
 PLEX_HEADERS = {
-    "X-Plex-Product": "Nostalgiavision",
+    "X-Plex-Product": "AEVAvision",
     "X-Plex-Version": "0.3.17",
     "X-Plex-Platform": "Python",
-    "X-Plex-Device-Name": "Nostalgiavision-Desktop",
+    "X-Plex-Device-Name": "AEVAvision-Desktop",
     "Accept": "application/json",
 }
 
@@ -116,6 +116,15 @@ class PlexClient:
 
     def get_collections(self, library_id: str) -> list:
         return self._paginate(f"/library/sections/{library_id}/collections")
+
+    def get_playlists(self) -> list:
+        """All playlists on the server."""
+        data = self._get("/playlists")
+        return data.get("MediaContainer", {}).get("Metadata", [])
+
+    def get_playlist_items(self, playlist_rating_key: str) -> list:
+        """All items in a playlist."""
+        return self._paginate(f"/playlists/{playlist_rating_key}/items")
 
     def get_collection_items(self, collection_rating_key: str) -> list:
         data = self._get(f"/library/metadata/{collection_rating_key}/children")
