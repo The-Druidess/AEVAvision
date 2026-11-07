@@ -478,7 +478,7 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
 }
 #guide-video-poster{
   position:absolute;inset:0;width:100%;height:100%;
-  object-fit:cover;background:#000;display:none!important;
+  object-fit:contain;object-position:center center;background:#000;display:none;z-index:2;
 }
 #guide-video-placeholder{
   position:absolute;inset:0;display:none!important;flex-direction:column;
@@ -1607,6 +1607,11 @@ function renderGuideGrid() {
         _navProgIdx = pi;
         selectProgram(p, ch, block);
       });
+      block.addEventListener('dblclick', () => {
+        _navChIdx   = ci;
+        _navProgIdx = pi;
+        activateGuideProgram(p, ch, block);
+      });
       progArea.appendChild(block);
 
       // Logo slate (padded gap)
@@ -1623,6 +1628,11 @@ function renderGuideGrid() {
           _navChIdx   = ci;
           _navProgIdx = pi;
           selectProgram(p, ch, block);
+        });
+        slate.addEventListener('dblclick', () => {
+          _navChIdx   = ci;
+          _navProgIdx = pi;
+          activateGuideProgram(p, ch, block);
         });
         progArea.appendChild(slate);
       }
@@ -1703,6 +1713,7 @@ function hideNoProgrammingPreview() {
 }
 
 function selectNoProgramming(ch, blockEl) {
+  clearTimeout(_liveDebounce);
   _selectedProg = null;
   _selectedCh = ch;
   clearTimeout(_autoAdvanceTimer);
@@ -1940,12 +1951,20 @@ function autoSelectFirstLive() {
 // ══════════════════════════════════════════════════════════════════════════════
 // Program selection + info panel
 // ══════════════════════════════════════════════════════════════════════════════
-function selectProgram(p, ch, blockEl) {
+function activateGuideProgram(p, ch, blockEl) {
+  const isLive = p.start_time <= Date.now() && p.end_time > Date.now();
+  selectProgram(p, ch, blockEl, isLive);
+  if (!isLive && p.rating_key) playNow(true);
+}
+
+function selectProgram(p, ch, blockEl, openFullscreen = false) {
+  clearTimeout(_liveDebounce);
   hideNoProgrammingPreview();
   _selectedProg = p;
   _selectedCh   = ch;
   const nowMs  = Date.now();
   const isLive = p.start_time <= nowMs && p.end_time > nowMs;
+  if (openFullscreen && isLive) requestGuideFullscreen();
 
   // ── Info panel
   document.getElementById('guide-show-title').textContent =
@@ -1970,7 +1989,7 @@ function selectProgram(p, ch, blockEl) {
   if (isLive) {
     badges.push('<span class="badge-live">LIVE</span>');
   } else if (p.rating_key) {
-    badges.push(`<button type="button" class="badge-tivo-play" onclick="event.stopPropagation(); playNow()" title="Play Now" aria-label="Play Now"><img src="${appUrl('image/tivo-logo.png')}" alt=""></button>`);
+    badges.push(`<button type="button" class="badge-tivo-play" onclick="event.stopPropagation(); playNow(true)" title="Play Now fullscreen" aria-label="Play Now"><img src="${appUrl('image/tivo-logo.png')}" alt=""></button>`);
   }
   if (p.content_rating) badges.push(`<span class="badge-cr">${escHtml(p.content_rating)}</span>`);
   const cachedResolution = String(p.video_resolution || '').trim();
@@ -2036,16 +2055,54 @@ function selectProgram(p, ch, blockEl) {
     clearTimeout(_autoAdvanceTimer);
     _clearNextPrefetch();
     destroyHls();
-    // Show thumbnail in video panel for non-live shows
+
+    const video = document.getElementById('guide-video');
     const poster = document.getElementById('guide-video-poster');
-    if (p.thumb_url) {
-      poster.src = appUrl(`/api/thumb?path=${encodeURIComponent(p.thumb_url)}`);
+    const spinner = document.getElementById('guide-video-spinner');
+    const placeholder = document.getElementById('guide-video-placeholder');
+    const selectionKey = `${p.rating_key || ''}:${p.start_time}`;
+    const fallbackPath = p.rating_key
+      ? `/library/metadata/${encodeURIComponent(p.rating_key)}/thumb`
+      : '';
+    let posterPath = p.thumb_url || fallbackPath;
+
+    video.pause();
+    video.style.display = 'none';
+    placeholder.style.display = 'none';
+    spinner.style.display = 'none';
+    poster.dataset.selectionKey = selectionKey;
+    poster.onload = () => {
+      if (poster.dataset.selectionKey !== selectionKey) return;
+      clearGuideError();
+      spinner.style.display = 'none';
+      video.style.display = 'none';
       poster.style.display = 'block';
-      poster.onerror = () => { poster.style.display = 'none'; };
-      document.getElementById('guide-video-placeholder').style.display = 'none';
+    };
+    poster.onerror = () => {
+      if (poster.dataset.selectionKey !== selectionKey) return;
+      if (fallbackPath && posterPath !== fallbackPath) {
+        posterPath = fallbackPath;
+        poster.src = appUrl(`/api/thumb?path=${encodeURIComponent(posterPath)}`);
+        return;
+      }
+      poster.onerror = null;
+      poster.style.display = 'none';
+      showGuideError();
+    };
+
+    showGuideError();
+    if (posterPath) {
+      poster.style.display = 'none';
+      const posterUrl = appUrl('api/thumb?path=' + encodeURIComponent(posterPath));
+      if (poster.src === posterUrl && poster.complete && poster.naturalWidth > 0) {
+        poster.onload();
+      } else {
+        poster.src = posterUrl;
+      }
     } else {
       poster.style.display = 'none';
       poster.src = '';
+      showGuideError();
     }
   }
 }
@@ -2281,12 +2338,18 @@ function guideSeekLive() {
   v.currentTime = offsetSec;
 }
 
-function guideFullscreen() {
+function requestGuideFullscreen() {
   const wrap = document.getElementById('guide-video-wrap');
-  if (!document.fullscreenElement) {
+  if (!document.fullscreenElement && wrap.requestFullscreen) {
     wrap.requestFullscreen().catch(() => {});
-  } else {
+  }
+}
+
+function guideFullscreen() {
+  if (document.fullscreenElement) {
     document.exitFullscreen();
+  } else {
+    requestGuideFullscreen();
   }
 }
 
@@ -2481,8 +2544,9 @@ document.getElementById('guide-video-wrap').addEventListener('mousemove', () => 
 }, { passive: true });
 
 // ── Play Now (non-live: load into guide player from start)
-function playNow() {
+function playNow(openFullscreen = false) {
   if (!_selectedProg || !_selectedProg.rating_key) return;
+  if (openFullscreen) requestGuideFullscreen();
   const ratingKey = _selectedProg.rating_key;
   // Destroy any live stream and load this item from start
   destroyHls();
@@ -2613,7 +2677,18 @@ document.addEventListener('keydown', e => {
     return;
   }
 
-  if (e.key === 'ArrowDown') {
+  if (e.key === 'Enter') {
+    if (e.target.closest && e.target.closest('button,a')) return;
+    e.preventDefault();
+    const ch = channels[_navChIdx];
+    const p = ch && (ch.programs || [])[_navProgIdx];
+    if (p) {
+      const block = document.querySelector(
+        `.guide-prog-block[data-ch-idx="${_navChIdx}"][data-prog-idx="${_navProgIdx}"]`
+      );
+      activateGuideProgram(p, ch, block);
+    }
+  } else if (e.key === 'ArrowDown') {
     e.preventDefault();
     if (inFs) {
       if (isFsConfirmMode()) {
