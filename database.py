@@ -134,6 +134,13 @@ def init_db():
         CREATE TABLE IF NOT EXISTS hidden_channels (
             number INTEGER PRIMARY KEY
         );
+
+        CREATE TABLE IF NOT EXISTS schedule_cycle_state (
+            channel_id    TEXT PRIMARY KEY,
+            remaining_json TEXT NOT NULL,
+            used_json      TEXT NOT NULL,
+            last_rating_key TEXT
+        );
         """)
     log.info("Database initialised at %s", DB_PATH)
 
@@ -312,6 +319,12 @@ def delete_channel_programs_from(channel_id: str, from_time: int):
         )
 
 
+def delete_programs_starting_at_or_after(start_time: int):
+    """Discard programs outside the active local-day schedule window."""
+    with get_db() as conn:
+        conn.execute("DELETE FROM programs WHERE start_time >= ?", (start_time,))
+
+
 def delete_expired_programs(cutoff_time: int):
     with get_db() as conn:
         conn.execute("DELETE FROM programs WHERE end_time < ?", (cutoff_time,))
@@ -346,6 +359,36 @@ def get_latest_program_end(channel_id: str) -> int:
             (channel_id,)
         ).fetchone()
         return row[0] or 0
+
+
+def get_schedule_cycle_state(channel_id: str) -> dict | None:
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT remaining_json, used_json, last_rating_key "
+            "FROM schedule_cycle_state WHERE channel_id = ?",
+            (channel_id,),
+        ).fetchone()
+    if not row:
+        return None
+    try:
+        return {
+            "remaining": json.loads(row["remaining_json"]),
+            "used": json.loads(row["used_json"]),
+            "last_rating_key": row["last_rating_key"],
+        }
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+
+def save_schedule_cycle_state(channel_id: str, remaining: list,
+                              used: list, last_rating_key: str | None):
+    with get_db() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO schedule_cycle_state "
+            "(channel_id, remaining_json, used_json, last_rating_key) "
+            "VALUES (?, ?, ?, ?)",
+            (channel_id, json.dumps(remaining), json.dumps(used), last_rating_key),
+        )
 
 
 def clear_all_programs():

@@ -8,7 +8,7 @@ Built with Python, runs on Windows and Linux, and opens in any modern web browse
 
 ## What it does
 
-ÆVAvision generates a rolling multi-day TV schedule from your Plex library and presents it as a classic electronic program guide (EPG). Content plays back through your browser as a live stream, advancing automatically from one program to the next — no clicking required.
+ÆVAvision generates a randomized 24-hour TV schedule from your Plex library and presents it as a classic electronic program guide (EPG). Each channel gets a fresh lineup at local midnight. Content plays back through your browser as a live stream, advancing automatically from one program to the next — no clicking required.
 
 - Browse the guide grid, click a program, and watch it from the live position
 - Leave it running and it behaves like a real TV channel — programs roll over automatically
@@ -92,7 +92,7 @@ to Flask as `/api/guide`.
 - 4 algorithms: **Random**, **Cyclic Shuffle** (by season), **Block Shuffle**, **Block Cyclic**
 - Back-to-back scheduling — no artificial padding or gaps between episodes
 - Schedule rebuilds cleanly after a library sync (stale programs are replaced)
-- 3-day rolling window (configurable)
+- 24-hour schedule regenerated daily at local midnight
 
 ### Appearance
 - Six built-in themes: Midnight, CRT Green, Amber, Ocean, Rose, Mono
@@ -129,7 +129,6 @@ aevavision/
   "plex_url": "http://192.168.1.100:32400",
   "plex_token": "your-token-here",
   "library_ids": ["1", "2"],
-  "schedule_days_ahead": 3,
   "port": 5000,
   "host": "0.0.0.0"
 }
@@ -140,7 +139,6 @@ aevavision/
 | `plex_url` | — | Base URL of your Plex Media Server |
 | `plex_token` | — | Plex authentication token |
 | `library_ids` | `[]` | Library section IDs to sync (found in Settings → Libraries) |
-| `schedule_days_ahead` | `3` | How many days of schedule to generate |
 | `port` | `5000` | Port the web UI listens on |
 | `host` | `0.0.0.0` | Bind address (`0.0.0.0` = accessible on the network) |
 

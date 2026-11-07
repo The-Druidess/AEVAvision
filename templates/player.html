@@ -18,6 +18,7 @@ video{width:100%;height:100%;object-fit:contain;background:#000}
   position:absolute;inset:0;background:linear-gradient(to top,#000c 0%,transparent 40%,transparent 70%,#0008 100%);
   opacity:0;transition:opacity .3s;pointer-events:none;display:flex;flex-direction:column;justify-content:space-between
 }
+#overlay{display:none!important}
 #container:hover #overlay,#overlay.visible{opacity:1;pointer-events:auto}
 
 #top-bar{display:flex;align-items:center;gap:14px;padding:16px 20px}
@@ -53,15 +54,11 @@ video{width:100%;height:100%;object-fit:contain;background:#000}
 #spinner{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
   justify-content:center;background:#000}
 #spinner .static-vid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-#spinner .msg{position:relative;z-index:1;font-size:14px;color:#fff;
-  background:#000a;padding:6px 14px;border-radius:4px}
 
 /* Error */
 #error-box{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;
-  justify-content:center;gap:12px;background:#000d;padding:24px;text-align:center}
-#error-box .icon{font-size:40px}
-#error-box .msg{font-size:14px;color:#fca5a5;max-width:400px}
-#error-box a{color:#818cf8;font-size:13px}
+  justify-content:center;background:#000;overflow:hidden}
+#error-box .error-vid{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 </style>
 </head>
 <body>
@@ -97,14 +94,10 @@ video{width:100%;height:100%;object-fit:contain;background:#000}
 
   <div id="spinner">
     <video class="static-vid" src="{{ url_for('serve_image_asset', filename='rainbow-static.mp4') }}" autoplay muted loop playsinline preload="auto"></video>
-    <div class="msg" id="spinner-msg">Loading stream...</div>
   </div>
 
   <div id="error-box">
-    <div class="icon">⚠️</div>
-    <div class="msg" id="error-msg"></div>
-    <a href="javascript:location.reload()">Try again</a>
-    <a href="../">Back to guide</a>
+    <video class="error-vid" src="{{ url_for('serve_image_asset', filename='no-signal.mp4') }}" muted loop playsinline preload="auto"></video>
   </div>
 </div>
 
@@ -113,14 +106,12 @@ video{width:100%;height:100%;object-fit:contain;background:#000}
 <script>
 const video   = document.getElementById('video');
 const spinner = document.getElementById('spinner');
-const spinMsg = document.getElementById('spinner-msg');
 const errBox  = document.getElementById('error-box');
-const errMsg  = document.getElementById('error-msg');
 const staticVid = spinner.querySelector('.static-vid');
+const errorVid = errBox.querySelector('.error-vid');
 const HLS_URL = {{ hls_url | tojson }};
 
-function showSpinner(msg) {
-  if (msg) spinMsg.textContent = msg;
+function showSpinner() {
   spinner.style.display = 'flex';
   staticVid.play().catch(() => {});
 }
@@ -129,10 +120,19 @@ function hideSpinner() {
   staticVid.pause();
 }
 
-function showError(msg) {
+function showError() {
   hideSpinner();
+  video.pause();
   errBox.style.display  = 'flex';
-  errMsg.textContent    = msg;
+  if (errorVid.readyState > 0) errorVid.currentTime = 0;
+  errorVid.play().catch(() => {});
+}
+
+function startPlayerPlayback() {
+  video.play().catch(() => {
+    video.muted = true;
+    video.play().catch(() => showError());
+  });
 }
 
 function fmtTime(s) {
@@ -145,7 +145,9 @@ function fmtTime(s) {
 }
 
 // ── HLS setup ─────────────────────────────────────────────────────────────────
-if (Hls.isSupported()) {
+if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+  let networkRetries = 0;
+  let mediaRetries = 0;
   const hls = new Hls({
     enableWorker: true,
     lowLatencyMode: false,
@@ -155,36 +157,41 @@ if (Hls.isSupported()) {
   hls.attachMedia(video);
 
   hls.on(Hls.Events.MANIFEST_PARSED, () => {
-    spinMsg.textContent = 'Starting playback...';
-    video.play().catch(() => {});
+    startPlayerPlayback();
   });
 
   hls.on(Hls.Events.ERROR, (event, data) => {
     if (data.fatal) {
       switch (data.type) {
         case Hls.ErrorTypes.NETWORK_ERROR:
-          spinMsg.textContent = 'Network error — retrying...';
-          hls.startLoad();
+          if (networkRetries++ < 3) {
+            showSpinner();
+            hls.startLoad();
+          } else {
+            showError();
+          }
           break;
         case Hls.ErrorTypes.MEDIA_ERROR:
-          hls.recoverMediaError();
+          if (mediaRetries++ < 2) hls.recoverMediaError();
+          else showError();
           break;
         default:
-          showError(`Playback failed: ${data.details}\n\nThe file may use a codec the browser cannot decode even with transcoding.`);
+          showError();
       }
     }
   });
 } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
   // Safari — native HLS
   video.src = HLS_URL;
-  video.addEventListener('loadedmetadata', () => video.play().catch(() => {}));
+  video.addEventListener('loadedmetadata', startPlayerPlayback);
+  video.addEventListener('error', showError);
 } else {
-  showError('Your browser does not support HLS playback. Try Chrome, Firefox, or Safari.');
+  showError();
 }
 
 // ── Player controls ───────────────────────────────────────────────────────────
-video.addEventListener('waiting', () => showSpinner('Buffering...'));
-video.addEventListener('playing', () => hideSpinner());
+video.addEventListener('waiting', showSpinner);
+  video.addEventListener('playing', () => hideSpinner());
 video.addEventListener('canplay',  () => hideSpinner());
 
 // Progress bar

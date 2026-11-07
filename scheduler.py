@@ -8,6 +8,7 @@ database insertion.
 import random
 import time
 import logging
+from datetime import datetime, timedelta
 from typing import Optional
 
 import database as db
@@ -17,7 +18,6 @@ log = logging.getLogger(__name__)
 
 QUARTER_HOUR_MS = 15 * 60 * 1000   # 900 000 ms
 DEFAULT_DURATION_MS = 30 * 60 * 1000  # 30 min fallback
-DAY_MS = 24 * 60 * 60 * 1000
 
 
 # ── Content matching ───────────────────────────────────────────────────────────
@@ -327,26 +327,52 @@ def _generate_block_cyclic(content: list, channel_id: str, start_time: int,
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
+def _make_cycle_order(content: list, method: str) -> list:
+    """Return one randomized pass containing every available item once."""
+    if method == CYCLIC_SHUFFLE:
+        seasons = {}
+        other = []
+        for item in content:
+            season = item.get("season_number")
+            if season is None:
+                other.append(item)
+            else:
+                seasons.setdefault(season, []).append(item)
+        season_keys = list(seasons)
+        random.shuffle(season_keys)
+        for episodes in seasons.values():
+            random.shuffle(episodes)
+        order = []
+        while any(seasons.values()):
+            for season in season_keys:
+                if seasons[season]:
+                    order.append(seasons[season].pop())
+        random.shuffle(other)
+        order.extend(other)
+        return order
+
+    order = list(content)
+    random.shuffle(order)
+    if method in (BLOCK_SHUFFLE, BLOCK_CYCLIC) and len(order) > 1:
+        count = max(2, min(5, len(order) // 10 + 1))
+        blocks = _split_into_blocks(order, count)
+        for block in blocks:
+            random.shuffle(block)
+        if method == BLOCK_SHUFFLE:
+            random.shuffle(blocks)
+        order = [item for block in blocks for item in block]
+    return order
+
+
 def generate_channel_schedule(
     cfg: ChannelConfig,
     start_time: int,
     end_time: int,
     align: bool = True,
 ) -> list:
-    """Generate a schedule for one channel.
-
-    Args:
-        cfg: Channel configuration.
-        start_time: Schedule window start (ms since epoch).
-        end_time: Schedule window end (ms since epoch).
-        align: Whether to snap durations to quarter-hour boundaries.
-
-    Returns:
-        List of program dicts ready for db.insert_programs().
-    """
+    """Generate a schedule without repeating an option until the channel pool cycles."""
     channel_id = str(cfg.number)
     content = get_matching_content(cfg)
-
     if not content:
         log.warning("Channel %d (%s): no matching content found", cfg.number, cfg.name)
         return []
@@ -356,39 +382,83 @@ def generate_channel_schedule(
              cfg.number, cfg.name, method, len(content),
              (end_time - start_time) // 3_600_000)
 
-    if method == CYCLIC_SHUFFLE:
-        return _generate_cyclic_shuffle(content, channel_id, start_time, end_time, align)
-    elif method == BLOCK_SHUFFLE:
-        return _generate_block_shuffle(content, channel_id, start_time, end_time, align)
-    elif method == BLOCK_CYCLIC:
-        return _generate_block_cyclic(content, channel_id, start_time, end_time, align)
-    else:  # RANDOM (default)
-        return _generate_random(content, channel_id, start_time, end_time, align)
+    by_key = {str(item["rating_key"]): item for item in content}
+    state = db.get_schedule_cycle_state(channel_id) or {}
+    remaining = [key for key in state.get("remaining", [])
+                 if str(key) in by_key]
+    used = [key for key in state.get("used", [])
+            if str(key) in by_key and str(key) not in remaining]
+    remaining_keys = {str(key) for key in remaining}
+    used_keys = {str(key) for key in used}
+    added = [key for key in by_key if key not in remaining_keys and key not in used_keys]
+    if added:
+        random.shuffle(added)
+        remaining.extend(added)
+    last_key = state.get("last_rating_key")
+    if not remaining and not used:
+        remaining = [str(item["rating_key"]) for item in _make_cycle_order(content, method)]
+
+    programs = []
+    current = start_time
+    while current < end_time:
+        if not remaining:
+            remaining = [str(item["rating_key"]) for item in _make_cycle_order(content, method)]
+            used = []
+            if len(remaining) > 1 and remaining[0] == last_key:
+                remaining[0], remaining[1] = remaining[1], remaining[0]
+        key = remaining.pop(0)
+        item = by_key[key]
+        prog, current = _build_program(item, channel_id, current, align)
+        programs.append(prog)
+        used.append(key)
+        last_key = key
+
+    db.save_schedule_cycle_state(channel_id, remaining, used, last_key)
+    return programs
+
+
+def trim_schedules_to_current_local_day() -> None:
+    """Remove stored schedule entries beyond the next local midnight."""
+    tomorrow = datetime.now().date() + timedelta(days=1)
+    next_midnight_ms = int(
+        datetime.combine(tomorrow, datetime.min.time()).timestamp() * 1000
+    )
+    db.delete_programs_starting_at_or_after(next_midnight_ms)
 
 
 def build_schedules(
     configs: list,
-    days: int = 3,
+    days: int = 1,
     align: bool = False,
     progress_callback=None,
+    start_time_ms: int | None = None,
+    end_time_ms: int | None = None,
 ) -> dict:
     """Generate and persist schedules for all given channel configs.
 
     Args:
         configs: List of ChannelConfig objects.
-        days: How many days ahead to schedule.
+        days: Retained for compatibility; schedules use the current local day.
         align: Quarter-hour alignment toggle.
         progress_callback: Optional callable(channel_name, idx, total).
+        start_time_ms: Optional explicit schedule-window start.
+        end_time_ms: Optional explicit schedule-window end.
 
     Returns:
         Summary dict with program counts per channel.
     """
-    # Start at the beginning of the current hour
     now_ms = int(time.time() * 1000)
-    # Round down to nearest hour
-    hour_ms = 3_600_000
-    start_ms = (now_ms // hour_ms) * hour_ms
-    end_ms = start_ms + days * DAY_MS
+    local_now = datetime.fromtimestamp(now_ms / 1000)
+    if start_time_ms is None:
+        # Keep manual builds aligned to the local clock hour.
+        start_ms = int(local_now.replace(minute=0, second=0, microsecond=0).timestamp() * 1000)
+    else:
+        start_ms = int(start_time_ms)
+    if end_time_ms is None:
+        tomorrow = local_now.date() + timedelta(days=1)
+        end_ms = int(datetime.combine(tomorrow, datetime.min.time()).timestamp() * 1000)
+    else:
+        end_ms = int(end_time_ms)
 
     # Delete old/expired programs first
     db.delete_expired_programs(now_ms)
@@ -411,7 +481,8 @@ def build_schedules(
         # Schedule from after the currently-airing program's end (if one exists)
         # so there is no gap or overlap at the handoff point.
         latest = db.get_latest_program_end(channel_id)
-        gen_start = latest if latest and latest > start_ms else start_ms
+        gen_start = max(start_ms, now_ms if start_time_ms is not None else start_ms,
+                        latest if latest and latest > now_ms else start_ms)
 
         if gen_start >= end_ms:
             summary[cfg.number] = 0

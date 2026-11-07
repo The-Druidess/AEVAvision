@@ -10,8 +10,12 @@ os.chdir(os.path.dirname(os.path.abspath(__file__)))
 import database as db
 db.init_db()
 
+from scheduler import trim_schedules_to_current_local_day
+trim_schedules_to_current_local_day()
+
 import app as flask_app
 import json
+threading.Thread(target=flask_app._build_initial_schedule_if_missing, daemon=True).start()
 
 cfg_path = os.path.join(os.path.dirname(__file__), "config.json")
 if not os.path.exists(cfg_path):

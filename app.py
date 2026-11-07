@@ -25,7 +25,10 @@ import os
 import threading
 import time
 from dataclasses import asdict
+from datetime import datetime, timedelta
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from flask import Flask, jsonify, render_template, request, send_from_directory
 
 import database as db
@@ -33,7 +36,11 @@ from channels import (PREDEFINED_CHANNELS, PREDEFINED_BY_NUMBER,
                       ChannelConfig, RANDOM)
 from library_sync import sync_library
 from plex_client import PlexClient
-from scheduler import build_schedules, get_matching_content
+from scheduler import (
+    build_schedules,
+    get_matching_content,
+    trim_schedules_to_current_local_day,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -49,6 +56,7 @@ app = Flask(__name__)
 
 _sync_status = {"running": False, "message": "", "progress": 0, "total": 0}
 _schedule_status = {"running": False, "message": "", "progress": 0, "total": 0}
+_schedule_build_lock = threading.Lock()
 
 # Full-response cache for /api/status — prevents thread pile-up under heavy polling.
 # A single blocking lock ensures only ONE thread ever builds the response; all others
@@ -346,7 +354,7 @@ def api_guide():
     """
     try:
         start_sec = int(request.args.get("start", int(time.time())))
-        hours = int(request.args.get("hours", 4))
+        hours = int(request.args.get("hours", 24))
     except ValueError:
         return jsonify({"error": "Invalid parameters"}), 400
 
@@ -384,17 +392,15 @@ def api_guide():
 @app.route("/api/schedule/build", methods=["POST"])
 def api_schedule_build():
     global _schedule_status
-    if _schedule_status["running"]:
-        return jsonify({"ok": False, "error": "Schedule generation already running"}), 409
-
     data = request.get_json(force=True) or {}
-    days = int(data.get("days", _load_config().get("schedule_days_ahead", 3)))
     align = False  # back-to-back scheduling only; alignment removed
     channel_numbers = data.get("channels")  # None = all channels
 
     configs = _all_channel_configs()
     if channel_numbers:
         configs = [c for c in configs if c.number in channel_numbers]
+    if not _schedule_build_lock.acquire(blocking=False):
+        return jsonify({"ok": False, "error": "Schedule generation already running"}), 409
 
     def _run():
         global _schedule_status
@@ -405,7 +411,7 @@ def api_schedule_build():
                 _schedule_status["progress"] = idx
                 _schedule_status["total"] = total
 
-            summary = build_schedules(configs, days=days, align=align, progress_callback=progress)
+            summary = build_schedules(configs, days=1, align=align, progress_callback=progress)
             total_programs = sum(summary.values())
             _schedule_status["message"] = f"Done — {total_programs} programs scheduled"
         except Exception as exc:
@@ -413,6 +419,7 @@ def api_schedule_build():
             log.exception("Schedule build failed")
         finally:
             _schedule_status["running"] = False
+            _schedule_build_lock.release()
 
     threading.Thread(target=_run, daemon=True).start()
     return jsonify({"ok": True, "message": "Schedule generation started"})
@@ -534,7 +541,7 @@ def sync_playlist_channels() -> dict:
     - A new playlist creates a new custom channel (next free number from 101).
     - A playlist whose items changed updates its channel and rebuilds its schedule.
     - A deleted playlist removes its channel and scheduled programs.
-    - Channels running low on scheduled programs (<24h left) are topped up.
+    - New or updated playlists receive a schedule through the next daily refresh.
     """
     client = _get_client()
     if not client:
@@ -563,7 +570,6 @@ def sync_playlist_channels() -> dict:
             else:
                 by_name[cfg.name] = cfg
 
-        now_ms = int(time.time() * 1000)
         created, updated, removed, rebuild = [], [], [], []
         seen_ids = set()
 
@@ -601,11 +607,6 @@ def sync_playlist_channels() -> dict:
                 db.save_custom_channel(cfg.number, json.dumps(asdict(cfg)))
                 updated.append(title)
                 rebuild.append(cfg)
-            else:
-                # Unchanged — top up if less than 24h of schedule remains
-                latest = db.get_latest_program_end(str(cfg.number))
-                if not latest or latest < now_ms + 24 * 3_600_000:
-                    rebuild.append(cfg)
 
         # Channels whose playlist no longer exists
         for pl_id, cfg in list(by_playlist.items()):
@@ -614,12 +615,17 @@ def sync_playlist_channels() -> dict:
                 db.delete_channel_programs_from(str(cfg.number), 0)
                 removed.append(cfg.name)
 
-        if rebuild and not _schedule_status["running"]:
-            days = int(_load_config().get("schedule_days_ahead", 3))
+        if rebuild:
+            _schedule_build_lock.acquire()
+            _schedule_status.update({"running": True, "message": "Rebuilding playlist schedule...",
+                                     "progress": 0, "total": len(rebuild)})
             try:
-                build_schedules(rebuild, days=days)
+                build_schedules(rebuild, days=1)
             except Exception:
                 log.exception("Playlist sync: schedule rebuild failed")
+            finally:
+                _schedule_status["running"] = False
+                _schedule_build_lock.release()
 
         result = {"ok": True, "created": created, "updated": updated,
                   "removed": removed,
@@ -640,6 +646,70 @@ def _playlist_sync_loop():
         except Exception:
             log.exception("Playlist sync loop error")
         time.sleep(_PLAYLIST_SYNC_INTERVAL)
+
+
+def _regenerate_daily_schedules():
+    """Replace each visible channel's lineup with today's randomized schedule."""
+    global _schedule_status
+    with _schedule_build_lock:
+        configs = _all_channel_configs()
+        today = datetime.now().date()
+        tomorrow = today + timedelta(days=1)
+        day_start_ms = int(datetime.combine(today, datetime.min.time()).timestamp() * 1000)
+        next_day_ms = int(datetime.combine(tomorrow, datetime.min.time()).timestamp() * 1000)
+        _schedule_status = {
+            "running": True,
+            "message": "Generating today's 24-hour schedule...",
+            "progress": 0,
+            "total": len(configs),
+        }
+        try:
+            def progress(name, idx, total):
+                _schedule_status["message"] = f"Scheduling {name}..."
+                _schedule_status["progress"] = idx
+                _schedule_status["total"] = total
+
+            summary = build_schedules(
+                configs,
+                days=1,
+                align=False,
+                progress_callback=progress,
+                start_time_ms=day_start_ms,
+                end_time_ms=next_day_ms,
+            )
+            _schedule_status["message"] = (
+                f"Done — {sum(summary.values())} programs scheduled for today"
+            )
+            log.info("Daily schedule regenerated for %s across %d channels",
+                     today.isoformat(), len(configs))
+        except Exception as exc:
+            _schedule_status["message"] = f"Error: {exc}"
+            log.exception("Daily schedule regeneration failed")
+        finally:
+            _schedule_status["running"] = False
+
+
+_daily_schedule = BackgroundScheduler()
+_daily_schedule.add_job(
+    _regenerate_daily_schedules,
+    CronTrigger(hour=0, minute=0),
+    id="daily-channel-schedule",
+    replace_existing=True,
+    coalesce=True,
+    max_instances=1,
+)
+_daily_schedule.start()
+
+
+def _build_initial_schedule_if_missing():
+    """Create today's schedule on first launch, without reshuffling existing schedules."""
+    now = datetime.now()
+    midnight = datetime.combine(now.date(), datetime.min.time())
+    next_midnight = midnight + timedelta(days=1)
+    if db.get_all_programs(int(midnight.timestamp() * 1000),
+                           int(next_midnight.timestamp() * 1000)):
+        return
+    _regenerate_daily_schedules()
 
 
 threading.Thread(target=_playlist_sync_loop, daemon=True).start()
@@ -1149,6 +1219,8 @@ def api_play_on_client():
 
 if __name__ == "__main__":
     db.init_db()
+    trim_schedules_to_current_local_day()
+    threading.Thread(target=_build_initial_schedule_if_missing, daemon=True).start()
     cfg = _load_config()
     host = cfg.get("host", "0.0.0.0")
     port = int(cfg.get("port", 5000))

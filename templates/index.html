@@ -371,7 +371,7 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
 
 /* Channel OSD */
 #guide-ch-osd {
-  position:absolute; top:10px; right:10px; z-index:11;
+  position:absolute; top:10px; right:10px; z-index:11;display:none!important;
   background:rgba(0,0,0,.55); border-radius:4px;
   padding:4px 10px; display:flex; flex-direction:column;
   align-items:flex-end; gap:1px; pointer-events:none;
@@ -453,16 +453,16 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
 }
 #guide-video-poster{
   position:absolute;inset:0;width:100%;height:100%;
-  object-fit:cover;background:#000;display:none;
+  object-fit:cover;background:#000;display:none!important;
 }
 #guide-video-placeholder{
-  position:absolute;inset:0;display:flex;flex-direction:column;
+  position:absolute;inset:0;display:none!important;flex-direction:column;
   align-items:center;justify-content:center;gap:8px;
   color:var(--text-sec);font-size:13px;
 }
 #guide-video-placeholder .icon{font-size:32px;opacity:.5}
 #guide-video-testpattern{
-  position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  position:absolute;inset:0;display:none!important;align-items:center;justify-content:center;
   overflow:hidden;background:#000 url('image/test-pattern.png') center/cover no-repeat;
 }
 #guide-video-testpattern .tp-label{
@@ -472,13 +472,21 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
   text-transform:uppercase;
 }
 #guide-video-spinner{
-  position:absolute;inset:0;display:none;background:#000;
+  position:absolute;inset:0;display:flex;background:#000;
 }
 #guide-video-spinner .static-vid{
   position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
 }
+#guide-video-error{
+  position:absolute;inset:0;display:none;align-items:center;justify-content:center;
+  overflow:hidden;background:#0008;z-index:5;
+}
+#guide-video-error .error-vid{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+}
+#fs-overlay{display:none!important}
 #guide-video-brb {
-  position:absolute;inset:0;display:none;flex-direction:column;
+  position:absolute;inset:0;display:none!important;flex-direction:column;
   align-items:center;justify-content:center;gap:14px;background:#000;
 }
 #guide-brb-logo img { max-width:110px;max-height:72px;object-fit:contain;opacity:.85; }
@@ -871,6 +879,9 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
           <div id="guide-video-spinner">
             <video class="static-vid" src="{{ url_for('serve_image_asset', filename='rainbow-static.mp4') }}" autoplay muted loop playsinline preload="auto"></video>
           </div>
+          <div id="guide-video-error">
+            <video class="error-vid" src="{{ url_for('serve_image_asset', filename='no-signal.mp4') }}" muted loop playsinline preload="auto"></video>
+          </div>
           <div id="guide-video-brb">
             <div id="guide-brb-logo"></div>
             <div id="guide-brb-text">We'll Be Right Back</div>
@@ -941,7 +952,7 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
           <span class="gb-dot green"></span>+2hrs</span>
         <span class="gb-key" onclick="switchTab('settings')" title="Open guide options">
           <span class="gb-dot yellow"></span>Guide Options</span>
-        <span class="gb-key gb-plex" onclick="openPlexWeb()" title="Open Plex">
+        <span class="gb-key gb-plex" onclick="exitToPlex()" title="Exit ÆVAvision and return to Plex">
           <img class="gb-icon" src="image/tivo-logo.png?v=2" alt="">Plex</span>
       </div>
     </div><!-- /guide strip -->
@@ -1139,10 +1150,7 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
 
       <div class="settings-section">
         <h3>Schedule Settings</h3>
-        <div class="form-group">
-          <label>Days to schedule ahead</label>
-          <input type="number" id="s-days" value="3" min="1" max="14">
-        </div>
+        <div class="text-sm text-sec" style="margin-bottom:12px">Each channel has a 24-hour schedule. A new randomized lineup is generated at local midnight.</div>
         <div class="btn-group">
           <button class="btn btn-primary" onclick="buildSchedule()">Build Schedule Now</button>
           <button class="btn btn-danger btn-sm" onclick="clearSchedule()">Clear All Programs</button>
@@ -1276,7 +1284,8 @@ const PX_PER_MS    = 6 / 60000;   // 6 pixels per minute
 const CH_COL_PX    = 120;
 
 // Guide view state
-let _guideViewStart = Math.floor(Date.now() / HALF_HOUR_MS) * HALF_HOUR_MS;
+const _initialGuideDate = new Date();
+let _guideViewStart = new Date(_initialGuideDate.getFullYear(), _initialGuideDate.getMonth(), _initialGuideDate.getDate()).getTime();
 let _guideData      = null;        // { start, end, channels }
 let _selectedProg   = null;        // currently highlighted program
 let _selectedCh     = null;        // channel of selected program
@@ -1456,15 +1465,15 @@ async function loadGuide() {
   // If the current time has moved past 75% of the stored window (or beyond it),
   // snap the start to the nearest half-hour ≤ now so the fetch covers live content.
   const nowMs = Date.now();
-  const windowEnd = _guideViewStart + 4 * 60 * 60 * 1000;
-  if (nowMs >= windowEnd - 60 * 60 * 1000) {
+  const windowEnd = _guideViewStart + 24 * 60 * 60 * 1000;
+  if (nowMs >= windowEnd) {
     // Less than 1 hour left in the current window — re-anchor to now
     _guideViewStart = Math.floor(nowMs / HALF_HOUR_MS) * HALF_HOUR_MS;
   }
 
   const startSec = Math.floor(_guideViewStart / 1000);
   try {
-    const r = await fetch(appUrl(`/api/guide?start=${startSec}&hours=4`));
+    const r = await fetch(appUrl(`/api/guide?start=${startSec}&hours=24`));
     _guideData = await r.json();
   } catch(e) {
     document.getElementById('guide-grid-rows').innerHTML =
@@ -1481,9 +1490,14 @@ function renderGuideGrid() {
   const { start: gStart, end: gEnd, channels } = _guideData;
   const totalMs = gEnd - gStart;
   const totalPx = Math.round(totalMs * PX_PER_MS);
+  const wrap = document.getElementById('guide-scroll-wrap');
+  const rightPaddingPx = Math.max(0, wrap.clientWidth - CH_COL_PX);
+  const contentWidthPx = totalPx + rightPaddingPx;
 
   // ── Time header
-  renderTimeHeader(totalPx, gStart, gEnd);
+  // Keep a viewport-width runway after the schedule so the live marker
+  // is not clamped against the far right edge near the end of the day.
+  renderTimeHeader(contentWidthPx, gStart, gEnd + rightPaddingPx / PX_PER_MS);
 
   // ── Channel rows
   const rowsEl = document.getElementById('guide-grid-rows');
@@ -1514,7 +1528,7 @@ function renderGuideGrid() {
     // Program area
     const progArea = document.createElement('div');
     progArea.className = 'guide-ch-progs';
-    progArea.style.width = `${totalPx}px`;
+    progArea.style.width = `${contentWidthPx}px`;
     const chPrograms = ch.programs || [];
 
     for (let pi = 0; pi < chPrograms.length; pi++) {
@@ -1590,7 +1604,7 @@ function renderGuideGrid() {
     if (chPrograms.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'guide-prog-empty';
-      empty.style.width = `${Math.max(totalPx - 2, 20)}px`;
+      empty.style.width = `${Math.max(contentWidthPx - 2, 20)}px`;
       empty.dataset.chIdx = ci;
       empty.textContent = 'No Programming Available';
       empty.addEventListener('click', () => {
@@ -1629,6 +1643,10 @@ function alignBlockTextToView() {
 }
 
 let _alignRaf = null;
+window.addEventListener('resize', () => {
+  if (_guideData) renderGuideGrid();
+});
+
 document.getElementById('guide-scroll-wrap').addEventListener('scroll', () => {
   if (_alignRaf) return;
   _alignRaf = requestAnimationFrame(() => {
@@ -1649,20 +1667,12 @@ function syncLiveBadges() {
 }
 
 function showNoProgrammingPreview() {
-  const ph = document.getElementById('guide-video-placeholder');
-  const tp = document.getElementById('guide-video-testpattern');
-  const poster = document.getElementById('guide-video-poster');
-  if (poster) {
-    poster.style.display = 'none';
-    poster.src = '';
-  }
-  if (ph) ph.style.display = 'none';
-  if (tp) tp.style.display = 'flex';
+  clearGuideError();
+  document.getElementById('guide-video-spinner').style.display = 'flex';
 }
 
 function hideNoProgrammingPreview() {
-  const tp = document.getElementById('guide-video-testpattern');
-  if (tp) tp.style.display = 'none';
+  document.getElementById('guide-video-spinner').style.display = 'flex';
 }
 
 function selectNoProgramming(ch, blockEl) {
@@ -1996,12 +2006,32 @@ function afterStaticDelay(shownAt) {
     setTimeout(() => resolve(value), Math.max(0, STATIC_MIN_MS - (Date.now() - shownAt))));
 }
 
+function clearGuideError() {
+  const errorBox = document.getElementById('guide-video-error');
+  errorBox.style.display = 'none';
+  errorBox.querySelector('.error-vid').pause();
+}
+
+function showGuideError() {
+  const spinner = document.getElementById('guide-video-spinner');
+  const video = document.getElementById('guide-video');
+  const errorBox = document.getElementById('guide-video-error');
+  spinner.style.display = 'none';
+  video.pause();
+  video.style.display = 'none';
+  document.getElementById('guide-video-placeholder').style.display = 'none';
+  const errorVid = errorBox.querySelector('.error-vid');
+  errorBox.style.display = 'flex';
+  if (errorVid.readyState > 0) errorVid.currentTime = 0;
+  errorVid.play().catch(() => {});
+}
+
 function startGuidePlayback(video) {
   video.muted = false;
   video.play().catch(() => {
     // If audible autoplay is blocked, start playback muted instead.
     video.muted = true;
-    video.play().catch(() => {});
+    video.play().catch(() => showGuideError('The browser could not start the program'));
   });
 }
 
@@ -2015,6 +2045,7 @@ function loadLivePreview(ratingKey, startTimeMs) {
   const spinner = document.getElementById('guide-video-spinner');
   const ph      = document.getElementById('guide-video-placeholder');
   ph.style.display      = 'none';
+  clearGuideError();
   spinner.style.display = 'flex';
   const staticShownAt   = Date.now();
 
@@ -2032,12 +2063,15 @@ function loadLivePreview(ratingKey, startTimeMs) {
   hlsMeta
     .then(afterStaticDelay(staticShownAt))
     .then(data => {
-      if (!data.hls_url || _hlsKey !== ratingKey) return;  // stale
+      if (_hlsKey !== ratingKey) return;  // stale
+      if (!data.hls_url) throw new Error(data.error || 'No stream URL');
       video.style.display   = 'block';
 
       const offsetSec = Math.max(0, (Date.now() - startTimeMs) / 1000);
 
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+        let networkRetries = 0;
+        let mediaRetries = 0;
         _hlsInstance = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
@@ -2065,17 +2099,25 @@ function loadLivePreview(ratingKey, startTimeMs) {
               // If we're past the scheduled end, stop retrying and advance
               if (_selectedProg && Date.now() >= _selectedProg.end_time) {
                 _advanceIfCurrent();
-              } else {
+              } else if (networkRetries++ < 3) {
                 _hlsInstance.startLoad();
+              } else {
+                showGuideError('Unable to connect to the program stream');
               }
             } else if (d.type === Hls.ErrorTypes.MEDIA_ERROR) {
-              _hlsInstance.recoverMediaError();
+              if (mediaRetries++ < 2) _hlsInstance.recoverMediaError();
+              else showGuideError('The program stream could not be decoded');
+            } else {
+              showGuideError('The program stream failed to load');
             }
           }
         });
         video.addEventListener('ended', _advanceIfCurrent, { once: true });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = data.hls_url;
+        video.addEventListener('error', () => {
+          if (_hlsKey === ratingKey) showGuideError('The program stream could not be loaded');
+        }, { once: true });
         video.addEventListener('loadedmetadata', () => {
           video.currentTime = offsetSec;
           startGuidePlayback(video);
@@ -2086,11 +2128,12 @@ function loadLivePreview(ratingKey, startTimeMs) {
           clearTimeout(_autoAdvanceTimer);
           _doAdvance(_selectedProg, _selectedCh);
         }, { once: true });
+      } else {
+        showGuideError('This browser cannot play the program stream');
       }
     })
     .catch(() => {
-      spinner.style.display = 'none';
-      ph.style.display = 'flex';
+      if (_hlsKey === ratingKey) showGuideError('Unable to load the program stream');
     });
 }
 
@@ -2100,6 +2143,7 @@ function destroyHls() {
     _hlsInstance = null;
   }
   _hlsKey = null;
+  clearGuideError();
   hideNoProgrammingPreview();
   const video = document.getElementById('guide-video');
   video.pause();
@@ -2109,8 +2153,8 @@ function destroyHls() {
   const poster = document.getElementById('guide-video-poster');
   poster.style.display = 'none';
   poster.src = '';
-  document.getElementById('guide-video-placeholder').style.display = 'flex';
-  document.getElementById('guide-video-spinner').style.display = 'none';
+  document.getElementById('guide-video-placeholder').style.display = 'none';
+  document.getElementById('guide-video-spinner').style.display = 'flex';
   const brb = document.getElementById('guide-video-brb');
   if (brb) brb.style.display = 'none';
   updateVideoCtrlState();
@@ -2195,9 +2239,12 @@ const _gvideo = document.getElementById('guide-video');
 _gvideo.addEventListener('play',  updateVideoCtrlState);
 _gvideo.addEventListener('pause', updateVideoCtrlState);
 _gvideo.addEventListener('waiting', () => {
-  document.getElementById('guide-video-spinner').style.display = 'flex';
+  if (document.getElementById('guide-video-error').style.display !== 'flex') {
+    document.getElementById('guide-video-spinner').style.display = 'flex';
+  }
 });
 _gvideo.addEventListener('playing', () => {
+  clearGuideError();
   document.getElementById('guide-video-spinner').style.display = 'none';
 });
 
@@ -2380,25 +2427,30 @@ document.getElementById('guide-video-wrap').addEventListener('mousemove', () => 
 // ── Play Now (non-live: load into guide player from start)
 function playNow() {
   if (!_selectedProg || !_selectedProg.rating_key) return;
+  const ratingKey = _selectedProg.rating_key;
   // Destroy any live stream and load this item from start
   destroyHls();
-  _hlsKey       = _selectedProg.rating_key;
+  _hlsKey       = ratingKey;
   _hlsProgStart = 0;
 
   const video   = document.getElementById('guide-video');
   const spinner = document.getElementById('guide-video-spinner');
   const ph      = document.getElementById('guide-video-placeholder');
   ph.style.display      = 'none';
+  clearGuideError();
   spinner.style.display = 'flex';
   const staticShownAt   = Date.now();
 
-  fetch(appUrl(`/api/hls_url/${_selectedProg.rating_key}`))
+  fetch(appUrl(`/api/hls_url/${ratingKey}`))
     .then(r => r.json())
     .then(afterStaticDelay(staticShownAt))
     .then(data => {
-      if (!data.hls_url) throw new Error('No HLS URL');
+      if (_hlsKey !== ratingKey) return;
+      if (!data.hls_url) throw new Error(data.error || 'No HLS URL');
       video.style.display   = 'block';
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
+        let networkRetries = 0;
+        let mediaRetries = 0;
         _hlsInstance = new Hls({ enableWorker: true, backBufferLength: 90 });
         _hlsInstance.loadSource(data.hls_url);
         _hlsInstance.attachMedia(video);
@@ -2407,16 +2459,32 @@ function playNow() {
           startGuidePlayback(video);
           updateVideoCtrlState();
         });
+        _hlsInstance.on(Hls.Events.ERROR, (evt, data) => {
+          if (_hlsKey !== ratingKey || !data.fatal) return;
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            if (networkRetries++ < 3) _hlsInstance.startLoad();
+            else showGuideError('Unable to connect to the program stream');
+          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+            if (mediaRetries++ < 2) _hlsInstance.recoverMediaError();
+            else showGuideError('The program stream could not be decoded');
+          } else {
+            showGuideError('The program stream failed to load');
+          }
+        });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = data.hls_url;
+        video.addEventListener('error', () => {
+          if (_hlsKey === ratingKey) showGuideError('The program stream could not be loaded');
+        }, { once: true });
         video.currentTime = 0;
         startGuidePlayback(video);
         updateVideoCtrlState();
+      } else {
+        showGuideError('This browser cannot play the program stream');
       }
     })
     .catch(() => {
-      spinner.style.display = 'none';
-      ph.style.display = 'flex';
+      if (_hlsKey === ratingKey) showGuideError('Unable to load the program stream');
     });
 }
 
@@ -2919,12 +2987,10 @@ async function previewEditChannel() {
 }
 
 async function rebuildChannels(channelNumbers) {
-  const daysEl = document.getElementById('s-days');
-  const days   = parseInt(daysEl ? daysEl.value : 3);
   await fetch(appUrl('/api/schedule/build'), {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ days, channels: channelNumbers }),
+    body: JSON.stringify({ days: 1, channels: channelNumbers }),
   });
 }
 
@@ -3146,8 +3212,6 @@ async function startSync() {
 }
 
 async function buildSchedule() {
-  const daysEl = document.getElementById('s-days');
-  const days   = parseInt(daysEl ? daysEl.value : 3);
   const schBar = document.getElementById('guide-sched-bar');
   if (schBar) {
     schBar.classList.remove('hidden');
@@ -3159,7 +3223,7 @@ async function buildSchedule() {
   await fetch(appUrl('/api/schedule/build'), {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ days }),
+    body: JSON.stringify({ days: 1 }),
   });
 }
 
@@ -3288,16 +3352,16 @@ loadFsSurfMode();
 startProgramClock();
 startLiveBadgeClock();
 
-// Open the Plex web app for the configured server
-async function openPlexWeb() {
+// Exit ÆVAvision: navigate this tab back to the Plex app
+async function exitToPlex() {
+  let dest = 'https://app.plex.tv';
   try {
     const r = await fetch(appUrl('/api/status'));
     const d = await r.json();
     const base = (d.plex_url || '').replace(/\/+$/, '');
-    window.open(base ? base + '/web' : 'https://app.plex.tv', '_blank');
-  } catch (e) {
-    window.open('https://app.plex.tv', '_blank');
-  }
+    if (base) dest = base + '/web';
+  } catch (e) { /* fall back to app.plex.tv */ }
+  window.location.href = dest;
 }
 
 // Current weekday + time in the guide info bar (e.g. "Fri 4:20p")
@@ -3320,7 +3384,7 @@ setInterval(updateBarClock, 1000);
   const spinner = document.getElementById('guide-video-spinner');
   const vid = spinner.querySelector('.static-vid');
   const sync = () => {
-    if (spinner.style.display !== 'none' && spinner.style.display !== '') {
+    if (getComputedStyle(spinner).display !== 'none') {
       vid.play().catch(() => {});
     } else {
       vid.pause();
