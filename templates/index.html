@@ -654,13 +654,6 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
   position:relative;height:var(--ch-row);flex-shrink:0;
 }
 
-/* Aired overlay — dark tint over the already-elapsed portion of a live block */
-.prog-aired-overlay{
-  position:absolute;left:0;top:0;bottom:0;
-  background:rgba(0,0,0,0.32);pointer-events:none;z-index:2;
-  border-radius:0;
-}
-
 /* Individual program block */
 .guide-prog-block{
   position:absolute;top:0;
@@ -1568,20 +1561,6 @@ function renderGuideGrid() {
         block.appendChild(epEl);
       }
 
-      // Aired overlay — dark tint over the elapsed portion of a live block
-      if (isNow) {
-        const airedMs = Math.max(0, nowMs - Math.max(p.start_time, gStart));
-        const airedPx = Math.round(airedMs * PX_PER_MS);
-        if (airedPx > 0) {
-          const overlay = document.createElement('div');
-          overlay.className = 'prog-aired-overlay';
-          overlay.dataset.progStart = p.start_time;
-          overlay.dataset.gStart    = gStart;
-          overlay.style.width = `${airedPx}px`;
-          block.appendChild(overlay);
-        }
-      }
-
       block.addEventListener('click', () => {
         _navChIdx   = ci;
         _navProgIdx = pi;
@@ -1627,9 +1606,6 @@ function renderGuideGrid() {
     rowsEl.appendChild(row);
   }
 
-  // Refresh aired overlays every 30 s
-  clearInterval(_airedOverlayInterval);
-  _airedOverlayInterval = setInterval(refreshAiredOverlays, 30000);
   syncLiveBadges();
   alignBlockTextToView();
 }
@@ -1661,18 +1637,7 @@ document.getElementById('guide-scroll-wrap').addEventListener('scroll', () => {
   });
 }, { passive: true });
 
-let _airedOverlayInterval = null;
 let _liveBadgeInterval = null;
-function refreshAiredOverlays() {
-  const nowMs = Date.now();
-  document.querySelectorAll('.prog-aired-overlay').forEach(el => {
-    const progStart = parseInt(el.dataset.progStart, 10);
-    const gStart    = parseInt(el.dataset.gStart,    10);
-    const airedMs = Math.max(0, nowMs - Math.max(progStart, gStart));
-    el.style.width = `${Math.round(airedMs * PX_PER_MS)}px`;
-  });
-}
-
 function syncLiveBadges() {
   const nowMs = Date.now();
   document.querySelectorAll('.guide-prog-block').forEach(block => {
