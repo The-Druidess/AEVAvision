@@ -472,15 +472,11 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
   text-transform:uppercase;
 }
 #guide-video-spinner{
-  position:absolute;inset:0;display:none;flex-direction:column;
-  align-items:center;justify-content:center;gap:8px;background:#000a;
+  position:absolute;inset:0;display:none;background:#000;
 }
-#guide-video-spinner .ring{
-  width:32px;height:32px;border:3px solid #ffffff22;
-  border-top-color:var(--accent);border-radius:50%;
-  animation:spin .8s linear infinite;
+#guide-video-spinner .static-vid{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
 }
-@keyframes spin{to{transform:rotate(360deg)}}
 #guide-video-brb {
   position:absolute;inset:0;display:none;flex-direction:column;
   align-items:center;justify-content:center;gap:14px;background:#000;
@@ -880,7 +876,7 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
             <div class="tp-label">No Programming Available</div>
           </div>
           <div id="guide-video-spinner">
-            <div class="ring"></div>
+            <video class="static-vid" src="{{ url_for('serve_image_asset', filename='rainbow-static.mp4') }}" autoplay muted loop playsinline preload="auto"></video>
           </div>
           <div id="guide-video-brb">
             <div id="guide-brb-logo"></div>
@@ -2026,6 +2022,24 @@ function selectProgram(p, ch, blockEl) {
 // ══════════════════════════════════════════════════════════════════════════════
 // HLS player management
 // ══════════════════════════════════════════════════════════════════════════════
+
+// Channel-change static plays at least this long, even when the stream loads
+// instantly (e.g. prefetched HLS URL), so every switch gets a burst of static.
+const STATIC_MIN_MS = 400;
+function afterStaticDelay(shownAt) {
+  return value => new Promise(resolve =>
+    setTimeout(() => resolve(value), Math.max(0, STATIC_MIN_MS - (Date.now() - shownAt))));
+}
+
+function startGuidePlayback(video) {
+  video.muted = false;
+  video.play().catch(() => {
+    // If audible autoplay is blocked, start playback muted instead.
+    video.muted = true;
+    video.play().catch(() => {});
+  });
+}
+
 function loadLivePreview(ratingKey, startTimeMs) {
   if (_hlsKey === ratingKey) return;
   destroyHls();
@@ -2037,6 +2051,7 @@ function loadLivePreview(ratingKey, startTimeMs) {
   const ph      = document.getElementById('guide-video-placeholder');
   ph.style.display      = 'none';
   spinner.style.display = 'flex';
+  const staticShownAt   = Date.now();
 
   const prefetched = (_prefetchedHls.ratingKey === ratingKey && _prefetchedHls.hlsUrl)
     ? _prefetchedHls.hlsUrl
@@ -2050,9 +2065,9 @@ function loadLivePreview(ratingKey, startTimeMs) {
     : fetch(appUrl(`/api/hls_url/${ratingKey}`)).then(r => r.json());
 
   hlsMeta
+    .then(afterStaticDelay(staticShownAt))
     .then(data => {
       if (!data.hls_url || _hlsKey !== ratingKey) return;  // stale
-      spinner.style.display = 'none';
       video.style.display   = 'block';
 
       const offsetSec = Math.max(0, (Date.now() - startTimeMs) / 1000);
@@ -2068,8 +2083,7 @@ function loadLivePreview(ratingKey, startTimeMs) {
         _hlsInstance.attachMedia(video);
         _hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
           video.currentTime = offsetSec;
-          video.muted = false;
-          video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
+          startGuidePlayback(video);
           updateVideoCtrlState();
         });
         // When hls.js signals end-of-stream or the stream stalls at its end,
@@ -2099,8 +2113,7 @@ function loadLivePreview(ratingKey, startTimeMs) {
         video.src = data.hls_url;
         video.addEventListener('loadedmetadata', () => {
           video.currentTime = offsetSec;
-          video.muted = false;
-          video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
+          startGuidePlayback(video);
           updateVideoCtrlState();
         }, { once: true });
         video.addEventListener('ended', () => {
@@ -2216,6 +2229,12 @@ function guideFullscreen() {
 const _gvideo = document.getElementById('guide-video');
 _gvideo.addEventListener('play',  updateVideoCtrlState);
 _gvideo.addEventListener('pause', updateVideoCtrlState);
+_gvideo.addEventListener('waiting', () => {
+  document.getElementById('guide-video-spinner').style.display = 'flex';
+});
+_gvideo.addEventListener('playing', () => {
+  document.getElementById('guide-video-spinner').style.display = 'none';
+});
 
 // ── Fullscreen overlay controls
 let _fsIdleTimer = null;
@@ -2406,12 +2425,13 @@ function playNow() {
   const ph      = document.getElementById('guide-video-placeholder');
   ph.style.display      = 'none';
   spinner.style.display = 'flex';
+  const staticShownAt   = Date.now();
 
   fetch(appUrl(`/api/hls_url/${_selectedProg.rating_key}`))
     .then(r => r.json())
+    .then(afterStaticDelay(staticShownAt))
     .then(data => {
       if (!data.hls_url) throw new Error('No HLS URL');
-      spinner.style.display = 'none';
       video.style.display   = 'block';
       if (typeof Hls !== 'undefined' && Hls.isSupported()) {
         _hlsInstance = new Hls({ enableWorker: true, backBufferLength: 90 });
@@ -2419,15 +2439,13 @@ function playNow() {
         _hlsInstance.attachMedia(video);
         _hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
           video.currentTime = 0;
-          video.muted = false;
-          video.play().catch(() => {});
+          startGuidePlayback(video);
           updateVideoCtrlState();
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = data.hls_url;
         video.currentTime = 0;
-        video.muted = false;
-        video.play().catch(() => {});
+        startGuidePlayback(video);
         updateVideoCtrlState();
       }
     })
@@ -3331,6 +3349,22 @@ function updateBarClock() {
 }
 updateBarClock();
 setInterval(updateBarClock, 1000);
+
+// Play the rainbow-static loading loop only while the spinner overlay is shown
+(() => {
+  const spinner = document.getElementById('guide-video-spinner');
+  const vid = spinner.querySelector('.static-vid');
+  const sync = () => {
+    if (spinner.style.display !== 'none' && spinner.style.display !== '') {
+      vid.play().catch(() => {});
+    } else {
+      vid.pause();
+    }
+  };
+  new MutationObserver(sync).observe(spinner, { attributes: true, attributeFilter: ['style'] });
+  sync();
+})();
+
 loadGuide();
 loadGuideClients();
 </script>
