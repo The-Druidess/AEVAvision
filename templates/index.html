@@ -350,13 +350,26 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
 #guide-clock{flex-shrink:0;font-weight:700}
 .bar-sep{width:1px;align-self:stretch;flex-shrink:0;background:#fff;
   box-shadow:1px 0 0 rgba(143,176,207,.6)}
-#guide-badges{display:flex;gap:10px;flex-wrap:nowrap;margin-left:auto;flex-shrink:0}
-.badge-cr{background:#0a2a52;color:#fff;font-size:clamp(14px, 1vw, 18px);
-  padding:5px 12px;border-radius:5px;font-weight:700;border:1px solid #0a2a52}
-.badge-res{background:#0a66aa;color:#fff;font-size:clamp(14px, 1vw, 18px);
-  padding:5px 12px;border-radius:5px;font-weight:700;border:1px solid #0a66aa}
-.badge-live{background:#c0392b;color:#fff;font-size:clamp(14px, 1vw, 18px);
-  padding:5px 12px;border-radius:5px;font-weight:800;border:1px solid #c0392b;
+#guide-badges{display:flex;align-items:center;gap:10px;flex-wrap:nowrap;margin-left:auto;flex-shrink:0}
+#guide-badges > .badge-tivo-play,
+#guide-badges > .badge-cr,
+#guide-badges > .badge-res,
+#guide-badges > .badge-live{
+  width:96px;height:56px;min-height:56px;flex:0 0 96px;box-sizing:border-box;
+  padding:6px 8px;display:flex;align-items:center;justify-content:center;
+  text-align:center;white-space:nowrap;overflow:hidden;
+  font-size:clamp(16px, 1.15vw, 20px);line-height:1.05;
+}
+.badge-tivo-play{
+  background:#fff;border:1px solid #154e84;border-radius:6px;cursor:pointer;
+  box-shadow:0 1px 3px rgba(0,0,0,.22);transition:filter .15s,transform .15s;
+}
+.badge-tivo-play:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.badge-tivo-play img{display:block;max-height:42px;max-width:30px;width:auto;height:auto;object-fit:contain}
+.badge-cr{background:#0a2a52;color:#fff;border-radius:5px;font-weight:700;border:1px solid #0a2a52}
+.badge-res{background:#0a66aa;color:#fff;border-radius:5px;font-weight:700;border:1px solid #0a66aa}
+#guide-badges > .badge-res{font-size:clamp(14px, .9vw, 17px)}
+.badge-live{background:#c0392b;color:#fff;border-radius:5px;font-weight:800;border:1px solid #c0392b;
   animation:pulse-live 1.5s ease-in-out infinite}
 @keyframes pulse-live{0%,100%{opacity:1}50%{opacity:.6}}
 
@@ -446,7 +459,6 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
 }
 #guide-info-footer .btn-primary:hover{background:#1b7ec2;border-color:#1b7ec2}
 #guide-info-footer .status-msg{color:#33506e}
-#guide-play-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 #guide-controls-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 #guide-sched-bar{padding-top:4px}
 
@@ -868,11 +880,7 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
         </div>
 
         <div id="guide-info-footer">
-          <div id="guide-play-row">
-            <button class="btn btn-primary btn-sm" id="btn-play-now"
-              onclick="playNow()" style="display:none">▶ Play Now</button>
-          </div>
-          <div id="guide-controls-row"></div>
+<div id="guide-controls-row"></div>
           <div id="guide-sched-bar" class="hidden" style="padding-top:2px">
             <div class="status-msg" id="schedule-msg"></div>
             <div class="progress-bar">
@@ -1712,7 +1720,6 @@ function selectNoProgramming(ch, blockEl) {
   document.getElementById('guide-summary').textContent =
     'This channel currently has no matching media in your library.';
   document.getElementById('guide-summary').scrollTop = 0;
-  document.getElementById('btn-play-now').style.display = 'none';
   document.getElementById('vctr-live').style.display = 'none';
   const fsLive = document.getElementById('fs-live');
   if (fsLive) fsLive.style.display = 'none';
@@ -1957,20 +1964,42 @@ function selectProgram(p, ch, blockEl) {
     `${fmt(p.start_time)}–${fmt(p.end_time)} · Ch ${ch.number} ${ch.name}`;
   document.getElementById('guide-time-ch').scrollLeft = 0;
 
-  // Badges
+  // Keep LIVE first. For a non-live program, the TiVo badge takes that lead slot
+  // and starts the selected program from the beginning.
   const badges = [];
-  if (p.content_rating)  badges.push(`<span class="badge-cr">${escHtml(p.content_rating)}</span>`);
-  if (p.video_resolution) badges.push(`<span class="badge-res">${escHtml(p.video_resolution)}</span>`);
-  if (isLive) badges.push('<span class="badge-live">LIVE</span>');
+  if (isLive) {
+    badges.push('<span class="badge-live">LIVE</span>');
+  } else if (p.rating_key) {
+    badges.push(`<button type="button" class="badge-tivo-play" onclick="event.stopPropagation(); playNow()" title="Play Now" aria-label="Play Now"><img src="${appUrl('image/tivo-logo.png')}" alt=""></button>`);
+  }
+  if (p.content_rating) badges.push(`<span class="badge-cr">${escHtml(p.content_rating)}</span>`);
+  const cachedResolution = String(p.video_resolution || '').trim();
+  const dimensionMatch = cachedResolution.match(/^\d+x(\d+)$/i);
+  const hasPixelHeight = /^\d+p$/i.test(cachedResolution);
+  const resolutionLabel = dimensionMatch ? `${dimensionMatch[1]}p`
+    : (hasPixelHeight ? cachedResolution : 'N/A');
+  badges.push('<span class="badge-res" id="guide-resolution-badge">' +
+    `${escHtml(resolutionLabel)}</span>`);
+  if (p.rating_key && !p._resolutionChecked && !dimensionMatch && !hasPixelHeight) {
+    const selectedRatingKey = String(p.rating_key);
+    fetch(appUrl(`/api/resolution/${encodeURIComponent(selectedRatingKey)}`))
+      .then(r => r.ok ? r.json() : {resolution: 'N/A'})
+      .then(data => {
+        p._resolutionChecked = true;
+        if (_selectedProg && String(_selectedProg.rating_key) === selectedRatingKey) {
+          const badge = document.getElementById('guide-resolution-badge');
+          const resolution = data.resolution || 'N/A';
+          if (badge) badge.textContent = resolution;
+          p.video_resolution = resolution;
+        }
+      })
+      .catch(() => { p._resolutionChecked = true; });
+  }
   document.getElementById('guide-badges').innerHTML = badges.join('');
 
   // Summary
   document.getElementById('guide-summary').textContent = p.summary || '';
   document.getElementById('guide-summary').scrollTop = 0;
-
-  // Play Now (non-live with rating key)
-  const btnPlay = document.getElementById('btn-play-now');
-  btnPlay.style.display = (p.rating_key && !isLive) ? 'inline-flex' : 'none';
 
   // Live seek button (both normal bar and fullscreen overlay)
   document.getElementById('vctr-live').style.display = isLive ? 'inline-flex' : 'none';

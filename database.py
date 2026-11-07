@@ -311,6 +311,19 @@ def insert_programs(rows: list):
         """, rows)
 
 
+def update_video_resolution(rating_key: str, resolution: str):
+    """Update cached and scheduled resolution labels for one media item."""
+    with get_db() as conn:
+        conn.execute(
+            "UPDATE content SET video_resolution = ? WHERE rating_key = ?",
+            (resolution, str(rating_key)),
+        )
+        conn.execute(
+            "UPDATE programs SET video_resolution = ? WHERE rating_key = ?",
+            (resolution, str(rating_key)),
+        )
+
+
 def delete_channel_programs_from(channel_id: str, from_time: int):
     with get_db() as conn:
         conn.execute(

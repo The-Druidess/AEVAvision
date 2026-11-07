@@ -18,7 +18,7 @@ def _extract_media_part(plex_item: dict) -> dict:
     container = None
     audio_codec = None
     video_codec = None
-    video_resolution = None
+    video_resolution = "N/A"
     has_subtitles = 0
 
     if media_list:
@@ -26,15 +26,26 @@ def _extract_media_part(plex_item: dict) -> dict:
         container = m.get("container")
         audio_codec = m.get("audioCodec")
         video_codec = m.get("videoCodec")
-        video_resolution = m.get("videoResolution")
+        width, height = m.get("width"), m.get("height")
         parts = m.get("Part", [])
         if parts:
             media_part_key = parts[0].get("key")
-            # Check for subtitle streams
             streams = parts[0].get("Stream", [])
+            video_stream = next(
+                (stream for stream in streams
+                 if str(stream.get("streamType")) == "1"),
+                {},
+            )
+            width = width or video_stream.get("width")
+            height = height or video_stream.get("height")
             has_subtitles = int(any(
-                s.get("streamType") == 3 for s in streams
+                str(stream.get("streamType")) == "3" for stream in streams
             ))
+        try:
+            if width and height and int(width) > 0 and int(height) > 0:
+                video_resolution = f"{int(height)}p"
+        except (TypeError, ValueError):
+            pass
     return {
         "media_part_key": media_part_key,
         "container": container,

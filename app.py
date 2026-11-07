@@ -34,7 +34,7 @@ from flask import Flask, jsonify, render_template, request, send_from_directory
 import database as db
 from channels import (PREDEFINED_CHANNELS, PREDEFINED_BY_NUMBER,
                       ChannelConfig, RANDOM)
-from library_sync import sync_library
+from library_sync import sync_library, _extract_media_part
 from plex_client import PlexClient
 from scheduler import (
     build_schedules,
@@ -1034,6 +1034,25 @@ def watch(rating_key: str):
                            title=title,
                            thumb_url=thumb_url,
                            rating_key=rating_key)
+
+
+@app.route("/api/resolution/<rating_key>")
+def api_resolution(rating_key: str):
+    """Return exact pixel dimensions for a library item, or N/A."""
+    client = _get_client()
+    if not client:
+        return jsonify({"resolution": "N/A"})
+    try:
+        item = client.get_item_metadata(rating_key)
+        resolution = _extract_media_part(item or {}).get("video_resolution", "N/A")
+    except Exception as exc:
+        log.warning("Could not read resolution for %s: %s", rating_key, exc)
+        resolution = "N/A"
+    resolution = str(resolution or "").strip()
+    if not resolution.lower().endswith("p") or not resolution[:-1].isdigit():
+        resolution = "N/A"
+    db.update_video_resolution(rating_key, resolution)
+    return jsonify({"resolution": resolution})
 
 
 @app.route("/api/hls_url/<rating_key>")
