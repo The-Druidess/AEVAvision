@@ -27,7 +27,7 @@ html,body{height:100%;background:var(--bg);color:var(--text);
   position:relative;
   padding-top:44px;  /* buffer gap under the floating header controls */
   background:
-    url('image/background.jpg?v=3') left top/cover no-repeat fixed,
+    url('image/background.jpg?v=4') left top/100% 100% no-repeat fixed,
     radial-gradient(130% 75% at 50% -18%, rgba(92,200,215,.12) 0%, transparent 58%),
     linear-gradient(180deg, #0e1520 0%, #0a1018 100%);
 }
@@ -97,22 +97,57 @@ html,body{height:100%;background:var(--bg);color:var(--text);
   opacity:0;transition:opacity .25s}
 #fs-overlay.fs-visible{opacity:1;pointer-events:auto}
 #guide-video-wrap.fs-idle{cursor:none}
-#fs-info{padding:20px 24px 0;
-  background:linear-gradient(to bottom,rgba(0,0,0,.75) 0%,transparent 100%)}
-#fs-info-title{font-size:20px;font-weight:700;color:#fff}
-#fs-info-ep{font-size:13px;color:rgba(255,255,255,.65);margin-top:3px}
-#fs-controls{padding:0 20px 20px;
-  background:linear-gradient(to top,rgba(0,0,0,.8) 0%,transparent 100%);
-  display:flex;align-items:center;gap:8px}
-#fs-spacer{flex:1}
+.fs-frame-art{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;pointer-events:none}
+#fs-header-art,#fs-footer-art{z-index:0}
+#fs-info{position:absolute;inset:0;padding:0;background:none;pointer-events:none;z-index:1}
+#fs-info-title{position:absolute;left:8%;top:3%;width:75%;font-size:clamp(20px,2.3vw,44px);font-weight:700;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#fs-info-ep{position:absolute;left:8%;top:10.5%;width:75%;font-size:clamp(14px,1.45vw,28px);color:rgba(255,255,255,.9);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#fs-date-time,#fs-program-time,#fs-channel{position:absolute;top:21%;transform:translateY(-50%);font-size:clamp(12px,1.45vw,27px);font-weight:800;color:#104665;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#fs-date-time{left:2%;width:26%;text-align:center}
+#fs-program-time{left:30%;width:24%;text-align:center}
+#fs-channel{left:55%;width:19%;text-align:center}
+#fs-footer-info{position:absolute;inset:0;pointer-events:none;z-index:1}
+#fs-footer-program{position:absolute;left:7%;top:82%;width:67.5%;font-size:clamp(16px,1.8vw,34px);font-weight:600;color:#e9ef79;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#fs-mode-badge{position:absolute;right:5%;top:82%;font-size:clamp(16px,1.8vw,34px);color:#dce7f5;text-transform:uppercase}
+#fs-controls{position:absolute;inset:0;z-index:3;padding:0;background:none;display:block;pointer-events:none}
+#fs-controls > *{position:absolute;pointer-events:auto}
+#fs-skip-back,#fs-skip-forward,#fs-play{bottom:3.3%;height:5%;min-height:32px;padding:0 5px;font-size:clamp(11px,1vw,18px)}
+#fs-skip-back{left:6.05%;width:6.5%}
+#fs-skip-forward{left:12.55%;width:6.5%}
+#fs-controls .fs-skip{display:flex;align-items:center;justify-content:center;background:transparent;border:0;border-radius:0;box-shadow:none}
+#fs-controls .fs-skip{filter:drop-shadow(0 0 3px rgba(255,255,255,.45))}
+#fs-controls .fs-skip:hover,#fs-controls .fs-skip:focus-visible{background:transparent;filter:drop-shadow(0 0 7px rgba(255,255,255,.9))}
+.fs-skip-icon{display:block;width:36px;height:28px;background-image:url('image/10s.png');background-repeat:no-repeat;background-size:65px 28px;}
+.fs-skip-icon.skip-back{background-position:left center}
+.fs-skip-icon.skip-forward{background-position:right center}
+#fs-controls #fs-play{display:flex;align-items:center;justify-content:center;left:20.05%;width:6.5%;min-width:0;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none}
+#fs-controls #fs-play:hover{background:transparent;filter:brightness(1.15)}
+.fs-play-icon{display:block;width:45px;height:45px;background-image:url('image/pause-play.png');background-repeat:no-repeat;background-size:74px 45px;}
+.fs-play-icon.is-paused{background-position:7px center}
+.fs-play-icon.is-playing{background-position:-34px center}
+.fs-skip-icon,.fs-play-icon{filter:invert(1) drop-shadow(0 1px 1px #000) drop-shadow(0 0 4px rgba(255,255,255,.65))}
+#fs-progress-left,#fs-progress-right{top:87.2%;height:3.8%;display:flex;align-items:center;justify-content:center;color:#fff;font-size:clamp(12px,1.2vw,22px);font-variant-numeric:tabular-nums;text-shadow:0 1px 2px #000}
+#fs-progress-left{left:4%;width:11.5%}
+#fs-progress-right{left:85%;width:11%}
+#fs-progress-bar{left:16%;top:87.45%;width:69%;height:3.3%;overflow:hidden;border-radius:5px;background:#244c55;box-shadow:inset 0 1px 3px #0008}
+#fs-progress-fill{position:absolute;inset:0 auto 0 0;width:0;background:#168044;border-radius:inherit}
+#fs-progress-scrub{position:absolute;inset:-9px 0;width:100%;height:calc(100% + 18px);margin:0;opacity:0;cursor:pointer;touch-action:none}
+#fs-progress-scrub:disabled{cursor:default}
+.fs-skip:disabled{opacity:.4;cursor:default}
+#fs-mute{left:76.5%;top:18%;width:4%;height:6.5%;min-width:30px;min-height:0;padding:0;background:transparent;border:0;color:transparent;font-size:0}
+#fs-mute.is-muted::after{content:"";position:absolute;left:56%;top:0;height:90%;width:5px;background:#fff;transform:translateX(-50%) rotate(42deg);border-radius:3px;box-shadow:0 0 2px rgba(0,0,0,.8)}
+#fs-live{left:auto;right:5%;top:82.5%;bottom:auto;min-height:34px}
+#fs-tivo-play{left:63%;bottom:3%;min-height:34px}
+#fs-controls #fs-exit{right:4%;top:calc(17.85% + 3px);width:5%;height:6.5%;min-height:0;padding:0;display:flex;align-items:center;justify-content:center;background:transparent;border:0;border-radius:0;box-shadow:none}
+#fs-controls #fs-exit:hover{background:transparent;filter:brightness(1.2)}
+.fs-exit-icon{display:block;width:44px;height:44px;background-color:#0b4c6c;filter:blur(.65px);mask:url('image/exit.png?v=2') center/contain no-repeat;-webkit-mask:url('image/exit.png?v=2') center/contain no-repeat}
 .fs-btn{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.25);
   border-radius:6px;color:#fff;cursor:pointer;padding:7px 13px;font-size:13px;
   transition:background .15s;white-space:nowrap}
 .fs-btn:hover{background:rgba(255,255,255,.3)}
-#fs-vol{flex:0 0 100px;accent-color:#fff}
 #fs-mini-guide{
   position:absolute;left:50%;transform:translate(-50%,6px);
-  width:min(86vw,760px);bottom:74px;z-index:12;
+  width:min(86vw,760px);bottom:22%;z-index:12;
   background:linear-gradient(180deg,rgba(12,19,30,.58) 0%,rgba(8,13,22,.52) 100%);
   border:1px solid rgba(159,192,227,.24);border-radius:8px;
   box-shadow:0 10px 30px rgba(0,0,0,.32);
@@ -509,7 +544,6 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
 #guide-video-error .error-vid{
   position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
 }
-#fs-overlay{display:none!important}
 #guide-video-brb {
   position:absolute;inset:0;display:none!important;flex-direction:column;
   align-items:center;justify-content:center;gap:14px;background:#000;
@@ -918,9 +952,18 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
             <div class="osd-name"></div>
           </div>
           <div id="fs-overlay">
+            <img id="fs-header-art" class="fs-frame-art" src="{{ url_for('serve_image_asset', filename='channel-header.png') }}" alt="">
+            <img id="fs-footer-art" class="fs-frame-art" src="{{ url_for('serve_image_asset', filename='player-footer.png') }}" alt="">
             <div id="fs-info">
               <div id="fs-info-title"></div>
               <div id="fs-info-ep"></div>
+              <div id="fs-date-time"></div>
+              <div id="fs-program-time"></div>
+              <div id="fs-channel"></div>
+            </div>
+            <div id="fs-footer-info">
+              <div id="fs-footer-program"></div>
+              <div id="fs-mode-badge"></div>
             </div>
             <div id="fs-mini-guide">
               <div id="fs-mini-guide-title">Channel Surf</div>
@@ -928,13 +971,20 @@ textarea{resize:vertical;min-height:80px;font-family:inherit}
               <div id="fs-mini-guide-list"></div>
             </div>
             <div id="fs-controls">
-              <button class="fs-btn" id="fs-play" onclick="guideTogglePlay()">▶</button>
-              <button class="fs-btn" id="fs-mute" onclick="guideToggleMute()">🔇</button>
-              <input type="range" id="fs-vol" min="0" max="1" step="0.02" value="1"
-                oninput="guideSetVolume(this.value)">
-              <button class="fs-btn" id="fs-live" onclick="guideSeekLive()" style="display:none">📡 Live</button>
-              <span id="fs-spacer"></span>
-              <button class="fs-btn" id="fs-exit" onclick="guideFullscreen()">⛶ Exit</button>
+              <span id="fs-progress-left">0:00</span>
+              <div id="fs-progress-bar">
+                <div id="fs-progress-fill"></div>
+                <input id="fs-progress-scrub" type="range" min="0" max="1000" step="1"
+                  value="0" oninput="guideScrubFromFullscreen(this.value)" aria-label="Playback position">
+              </div>
+              <span id="fs-progress-right">0:00</span>
+              <button class="fs-btn fs-skip" id="fs-skip-back" onclick="guideSeekBy(-10)" title="Back 10 seconds" aria-label="Back 10 seconds"><span class="fs-skip-icon skip-back" aria-hidden="true"></span></button>
+              <button class="fs-btn fs-skip" id="fs-skip-forward" onclick="guideSeekBy(10)" title="Forward 10 seconds" aria-label="Forward 10 seconds"><span class="fs-skip-icon skip-forward" aria-hidden="true"></span></button>
+              <button class="fs-btn" id="fs-play" onclick="guideTogglePlay()" title="Play or pause" aria-label="Play"><span id="fs-play-icon" class="fs-play-icon is-paused" aria-hidden="true"></span></button>
+              <button class="fs-btn" id="fs-mute" onclick="guideToggleMute()" title="Mute or unmute" aria-label="Mute"></button>
+              <button class="fs-btn" id="fs-live" onclick="guideSeekLive()" style="display:none">Live</button>
+              <button class="fs-btn" id="fs-tivo-play" onclick="playNow(true)" style="display:none">Replay</button>
+              <button class="fs-btn" id="fs-exit" onclick="guideFullscreen()" title="Exit fullscreen" aria-label="Exit fullscreen"><span class="fs-exit-icon" aria-hidden="true"></span></button>
             </div>
           </div>
         </div>
@@ -1315,6 +1365,7 @@ const _initialGuideDate = new Date();
 let _guideViewStart = new Date(_initialGuideDate.getFullYear(), _initialGuideDate.getMonth(), _initialGuideDate.getDate()).getTime();
 let _guideData      = null;        // { start, end, channels }
 let _selectedProg   = null;        // currently highlighted program
+let _playerMode     = 'none';      // live preview or TiVo playback
 let _selectedCh     = null;        // channel of selected program
 let _navChIdx       = 0;
 let _navProgIdx     = 0;
@@ -1714,6 +1765,7 @@ function hideNoProgrammingPreview() {
 
 function selectNoProgramming(ch, blockEl) {
   clearTimeout(_liveDebounce);
+  _playerMode = 'none';
   _selectedProg = null;
   _selectedCh = ch;
   clearTimeout(_autoAdvanceTimer);
@@ -1964,6 +2016,7 @@ function selectProgram(p, ch, blockEl, openFullscreen = false) {
   _selectedCh   = ch;
   const nowMs  = Date.now();
   const isLive = p.start_time <= nowMs && p.end_time > nowMs;
+  _playerMode = isLive ? 'live' : 'tivo';
   if (openFullscreen && isLive) requestGuideFullscreen();
 
   // ── Info panel
@@ -2030,6 +2083,20 @@ function selectProgram(p, ch, blockEl, openFullscreen = false) {
   const fsEp    = document.getElementById('fs-info-ep');
   if (fsTitle) fsTitle.textContent = p.show_title || p.title || '';
   if (fsEp)    fsEp.textContent    = epInfo;
+  const fsProgramTime = document.getElementById('fs-program-time');
+  const fsChannel = document.getElementById('fs-channel');
+  const fsFooterProgram = document.getElementById('fs-footer-program');
+  const fsMode = document.getElementById('fs-mode-badge');
+  const fsTivoPlay = document.getElementById('fs-tivo-play');
+  if (fsProgramTime) fsProgramTime.textContent = `${fmt(p.start_time)} - ${fmt(p.end_time)}`;
+  if (fsChannel) fsChannel.textContent = `Ch ${ch.number} ${ch.name}`;
+  if (fsFooterProgram) fsFooterProgram.textContent = p.show_title || p.title || '';
+  if (fsMode) {
+    fsMode.textContent = isLive ? 'LIVE' : 'TiVo';
+    fsMode.style.display = isLive ? 'none' : 'block';
+  }
+  if (fsTivoPlay) fsTivoPlay.style.display = (!isLive && p.rating_key) ? 'inline-flex' : 'none';
+  _updateFsHeaderClock();
 
   // Highlight row + block
   document.querySelectorAll('.guide-ch-row.row-selected').forEach(r => r.classList.remove('row-selected'));
@@ -2296,11 +2363,21 @@ function updateVideoCtrlState() {
   document.getElementById('vctr-play').textContent = playTxt;
   document.getElementById('vctr-mute').textContent = muteTxt;
   const fsPlay = document.getElementById('fs-play');
+  const fsPlayIcon = document.getElementById('fs-play-icon');
   const fsMute = document.getElementById('fs-mute');
-  const fsVol  = document.getElementById('fs-vol');
-  if (fsPlay) fsPlay.textContent = playTxt;
-  if (fsMute) fsMute.textContent = muteTxt;
-  if (fsVol)  fsVol.value = video.volume;
+  if (fsPlay) {
+    fsPlay.setAttribute('aria-label', video.paused ? 'Play' : 'Pause');
+    fsPlay.title = video.paused ? 'Play' : 'Pause';
+  }
+  if (fsPlayIcon) {
+    fsPlayIcon.classList.toggle('is-paused', video.paused);
+    fsPlayIcon.classList.toggle('is-playing', !video.paused);
+  }
+  if (fsMute) {
+    fsMute.classList.toggle('is-muted', video.muted);
+    fsMute.title = video.muted ? 'Unmute' : 'Mute';
+    fsMute.setAttribute('aria-label', video.muted ? 'Unmute' : 'Mute');
+  }
 }
 
 function guideTogglePlay() {
@@ -2357,6 +2434,8 @@ function guideFullscreen() {
 const _gvideo = document.getElementById('guide-video');
 _gvideo.addEventListener('play',  updateVideoCtrlState);
 _gvideo.addEventListener('pause', updateVideoCtrlState);
+_gvideo.addEventListener('timeupdate', _updateFsPlaybackBar);
+_gvideo.addEventListener('durationchange', _updateFsPlaybackBar);
 _gvideo.addEventListener('waiting', () => {
   if (document.getElementById('guide-video-error').style.display !== 'flex') {
     document.getElementById('guide-video-spinner').style.display = 'flex';
@@ -2370,6 +2449,7 @@ _gvideo.addEventListener('playing', () => {
 // ── Fullscreen overlay controls
 let _fsIdleTimer = null;
 let _fsGuideTimer = null;
+let _fsClockTimer = null;
 let _fsPendingChIdx = null;
 let _fsPendingProgIdx = null;
 
@@ -2393,17 +2473,81 @@ function _updateFsMiniGuideHint() {
     : 'Arrow keys flip channels';
 }
 
+function _updateFsHeaderClock() {
+  const clock = document.getElementById('fs-date-time');
+  if (clock) clock.textContent = new Date().toLocaleString(undefined, {
+    weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'
+  });
+  _updateFsPlaybackBar();
+}
+
+function _formatFsDuration(seconds) {
+  const total = Math.max(0, Math.floor(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = total % 60;
+  return hours ? `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+    : `${minutes}:${String(secs).padStart(2, '0')}`;
+}
+
+function _updateFsPlaybackBar() {
+  const fill = document.getElementById('fs-progress-fill');
+  const scrub = document.getElementById('fs-progress-scrub');
+  const left = document.getElementById('fs-progress-left');
+  const right = document.getElementById('fs-progress-right');
+  const back = document.getElementById('fs-skip-back');
+  const forward = document.getElementById('fs-skip-forward');
+  if (!fill || !scrub || !left || !right) return;
+
+  const video = document.getElementById('guide-video');
+  const prog = _selectedProg;
+  const live = _playerMode === 'live';
+  const actualDuration = Number.isFinite(video.duration) && video.duration > 0
+    ? video.duration : 0;
+  const duration = live
+    ? Math.max(1, (prog ? prog.end_time - prog.start_time : 1) / 1000)
+    : (actualDuration || (prog && prog.duration_ms ? prog.duration_ms / 1000 : 0));
+  const elapsed = Math.max(0, Number.isFinite(video.currentTime) ? video.currentTime : 0);
+  const ratio = duration ? Math.min(1, elapsed / duration) : 0;
+  fill.style.width = `${ratio * 100}%`;
+  scrub.value = String(Math.round(ratio * 1000));
+  const canSeek = !live && actualDuration > 0 && video.style.display !== 'none';
+  scrub.disabled = !canSeek;
+  if (back) back.disabled = !canSeek;
+  if (forward) forward.disabled = !canSeek;
+
+  left.textContent = _formatFsDuration(elapsed);
+  right.textContent = _formatFsDuration(duration);
+}
+
+function guideScrubFromFullscreen(value) {
+  if (_playerMode !== 'tivo') return;
+  const video = document.getElementById('guide-video');
+  if (video.style.display === 'none' || !Number.isFinite(video.duration) || video.duration <= 0) return;
+  video.currentTime = Math.max(0, Math.min(1, Number(value) / 1000)) * video.duration;
+  _updateFsPlaybackBar();
+}
+
+function guideSeekBy(seconds) {
+  if (_playerMode !== 'tivo') return;
+  const video = document.getElementById('guide-video');
+  if (video.style.display === 'none' || !Number.isFinite(video.duration) || video.duration <= 0) return;
+  video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
+  _updateFsPlaybackBar();
+}
+
 function _showFsControls() {
   const overlay = document.getElementById('fs-overlay');
   const wrap    = document.getElementById('guide-video-wrap');
   if (!document.fullscreenElement) return;
   overlay.classList.add('fs-visible');
   wrap.classList.remove('fs-idle');
+  _updateFsHeaderClock();
   clearTimeout(_fsIdleTimer);
   _fsIdleTimer = setTimeout(() => {
     overlay.classList.remove('fs-visible');
     wrap.classList.add('fs-idle');
-  }, 3000);
+  }, 10000);
 }
 
 function _findLiveProgIdx(ch) {
@@ -2526,26 +2670,37 @@ document.addEventListener('fullscreenchange', () => {
   const panel = document.getElementById('fs-mini-guide');
   if (isFs) {
     _initFsPendingSelection();
+    _updateFsHeaderClock();
+    clearInterval(_fsClockTimer);
+    _fsClockTimer = setInterval(_updateFsHeaderClock, 1000);
     _showFsControls();
-    if (isFsGuideMode()) showFsMiniGuide();
   } else {
     overlay.classList.remove('fs-visible');
     wrap.classList.remove('fs-idle');
     if (panel) panel.classList.remove('visible');
     clearTimeout(_fsIdleTimer);
     clearTimeout(_fsGuideTimer);
+    clearInterval(_fsClockTimer);
+    _fsClockTimer = null;
     _fsPendingChIdx = null;
     _fsPendingProgIdx = null;
   }
 });
 
-document.getElementById('guide-video-wrap').addEventListener('mousemove', () => {
+const _fsActivityWrap = document.getElementById('guide-video-wrap');
+['pointermove', 'pointerdown', 'touchstart'].forEach(eventName => {
+  _fsActivityWrap.addEventListener(eventName, () => {
+    if (document.fullscreenElement) _showFsControls();
+  }, { passive: true });
+});
+document.addEventListener('keydown', () => {
   if (document.fullscreenElement) _showFsControls();
-}, { passive: true });
+}, true);
 
 // ── Play Now (non-live: load into guide player from start)
 function playNow(openFullscreen = false) {
   if (!_selectedProg || !_selectedProg.rating_key) return;
+  _playerMode = 'tivo';
   if (openFullscreen) requestGuideFullscreen();
   const ratingKey = _selectedProg.rating_key;
   // Destroy any live stream and load this item from start
